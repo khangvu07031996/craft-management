@@ -1,0 +1,1240 @@
+openapi: 3.0.0
+info:
+  title: User Management API
+  version: 1.0.0
+  description: A complete user management API with authentication using JWT, PostgreSQL database, and full CRUD operations.
+  contact:
+    name: API Support
+    email: support@craftmanagement.com
+  license:
+    name: ISC
+
+servers:
+  - url: http://localhost:3000
+    description: Development server
+  - url: https://api.production.com
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User authentication and authorization endpoints
+  - name: Users
+    description: User management endpoints (require authentication)
+  - name: Employees
+    description: Employee management endpoints (require authentication and admin role)
+  - name: Health
+    description: API health check endpoints
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Enter your JWT token obtained from login or register
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: User unique identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        email:
+          type: string
+          format: email
+          description: User email address
+          example: "user@example.com"
+        firstName:
+          type: string
+          description: User first name
+          example: "John"
+        lastName:
+          type: string
+          description: User last name
+          example: "Doe"
+        phoneNumber:
+          type: string
+          description: User phone number (optional)
+          example: "+1234567890"
+        address:
+          type: string
+          description: User address (optional)
+          example: "123 Main St, City, Country"
+        role:
+          type: string
+          enum: [admin, member]
+          description: User role (admin or member)
+          example: "member"
+        age:
+          type: integer
+          description: User age (optional)
+          example: 30
+        created_at:
+          type: string
+          format: date-time
+          description: User creation timestamp
+          example: "2025-11-07T10:00:00.000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: User last update timestamp
+          example: "2025-11-07T10:00:00.000Z"
+
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - firstName
+        - lastName
+      properties:
+        email:
+          type: string
+          format: email
+          description: User email address
+          example: "newuser@example.com"
+        password:
+          type: string
+          minLength: 6
+          description: User password (min 6 characters)
+          example: "password123"
+        firstName:
+          type: string
+          description: User first name
+          example: "John"
+        lastName:
+          type: string
+          description: User last name
+          example: "Doe"
+        phoneNumber:
+          type: string
+          description: User phone number (optional)
+          example: "+1234567890"
+        address:
+          type: string
+          description: User address (optional)
+          example: "123 Main St, New York, NY 10001"
+        role:
+          type: string
+          enum: [admin, member]
+          description: User role (defaults to 'member' if not specified)
+          example: "member"
+        age:
+          type: integer
+          description: User age (optional)
+          example: 25
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          description: User email address
+          example: "user@example.com"
+        password:
+          type: string
+          description: User password
+          example: "password123"
+
+    AuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Login successful"
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+            token:
+              type: string
+              description: JWT authentication token
+              example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          example: "updated@example.com"
+        firstName:
+          type: string
+          example: "UpdatedFirst"
+        lastName:
+          type: string
+          example: "UpdatedLast"
+        phoneNumber:
+          type: string
+          example: "+9876543210"
+        address:
+          type: string
+          example: "456 Updated Ave, Los Angeles, CA 90001"
+        age:
+          type: integer
+          example: 26
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Operation successful"
+        data:
+          type: object
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: "Error message"
+        error:
+          type: string
+          example: "Detailed error information"
+
+    Employee:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Employee unique identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        employeeId:
+          type: string
+          description: Employee ID/number
+          example: "EMP-2025-000001"
+        firstName:
+          type: string
+          description: Employee first name
+          example: "John"
+        lastName:
+          type: string
+          description: Employee last name
+          example: "Doe"
+        email:
+          type: string
+          format: email
+          description: Employee email address
+          example: "john.doe@company.com"
+        phoneNumber:
+          type: string
+          description: Employee phone number (optional)
+          example: "+1234567890"
+        position:
+          type: string
+          description: Employee job position
+          example: "Software Engineer"
+        department:
+          type: string
+          description: Employee department
+          example: "Engineering"
+        salary:
+          type: number
+          format: decimal
+          description: Employee salary (optional)
+          example: 75000.00
+        hireDate:
+          type: string
+          format: date
+          description: Employee hire date (YYYY-MM-DD)
+          example: "2025-01-15"
+        managerId:
+          type: string
+          format: uuid
+          description: Manager's employee ID (optional)
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        manager:
+          type: object
+          description: Manager information (if managerId is set)
+          properties:
+            id:
+              type: string
+              format: uuid
+            firstName:
+              type: string
+            lastName:
+              type: string
+            employeeId:
+              type: string
+        created_at:
+          type: string
+          format: date-time
+          description: Employee creation timestamp
+          example: "2025-11-07T10:00:00.000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Employee last update timestamp
+          example: "2025-11-07T10:00:00.000Z"
+
+    CreateEmployeeRequest:
+      type: object
+      required:
+        - firstName
+        - lastName
+        - email
+        - position
+        - department
+        - hireDate
+      properties:
+        employeeId:
+          type: string
+          description: Employee ID (optional, auto-generated if not provided)
+          example: "EMP-2025-000001"
+        firstName:
+          type: string
+          description: Employee first name
+          example: "John"
+        lastName:
+          type: string
+          description: Employee last name
+          example: "Doe"
+        email:
+          type: string
+          format: email
+          description: Employee email address
+          example: "john.doe@company.com"
+        phoneNumber:
+          type: string
+          description: Employee phone number (optional)
+          example: "+1234567890"
+        position:
+          type: string
+          description: Employee job position
+          example: "Software Engineer"
+        department:
+          type: string
+          description: Employee department
+          example: "Engineering"
+        salary:
+          type: number
+          format: decimal
+          description: Employee salary (optional)
+          example: 75000.00
+        hireDate:
+          type: string
+          format: date
+          description: Employee hire date (YYYY-MM-DD)
+          example: "2025-01-15"
+        managerId:
+          type: string
+          format: uuid
+          description: Manager's employee ID (optional)
+          example: "123e4567-e89b-12d3-a456-426614174000"
+
+    UpdateEmployeeRequest:
+      type: object
+      properties:
+        employeeId:
+          type: string
+          example: "EMP-2025-000002"
+        firstName:
+          type: string
+          example: "UpdatedFirst"
+        lastName:
+          type: string
+          example: "UpdatedLast"
+        email:
+          type: string
+          format: email
+          example: "updated@company.com"
+        phoneNumber:
+          type: string
+          example: "+9876543210"
+        position:
+          type: string
+          example: "Senior Software Engineer"
+        department:
+          type: string
+          example: "Engineering"
+        salary:
+          type: number
+          format: decimal
+          example: 85000.00
+        hireDate:
+          type: string
+          format: date
+          example: "2025-02-01"
+        managerId:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+
+paths:
+  /api/health:
+    get:
+      summary: Health check endpoint
+      description: Check if the API server is running
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Server is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Server is running"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2025-11-07T10:00:00.000Z"
+
+  /api/auth/register:
+    post:
+      summary: Register a new user
+      description: Create a new user account and receive a JWT token
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              email: "newuser@example.com"
+              password: "password123"
+              firstName: "John"
+              lastName: "Doe"
+              phoneNumber: "+1234567890"
+              address: "123 Main St, New York, NY"
+              age: 25
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Email, password, and name are required"
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Email is already registered"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/login:
+    post:
+      summary: Login user
+      description: Authenticate user and receive a JWT token
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: "user@example.com"
+              password: "password123"
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Missing email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Email and password are required"
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Invalid email or password"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/me:
+    get:
+      summary: Get current user profile
+      description: Retrieve the profile of the currently authenticated user
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Not authenticated or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "No token provided. Please authenticate."
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "User not found"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/users:
+    get:
+      summary: Get all users
+      description: Retrieve a list of all users (requires authentication and admin role)
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of all users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  count:
+                    type: integer
+                    example: 10
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "No token provided. Please authenticate."
+        '403':
+          description: Access denied - Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Access denied. Required role: admin"
+                currentRole: "member"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create a new user
+      description: Create a new user (requires authentication and admin role)
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              email: "newuser@example.com"
+              password: "password123"
+              firstName: "New"
+              lastName: "User"
+              phoneNumber: "+1234567890"
+              address: "123 Main St, City, State"
+              age: 28
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "User created successfully"
+                  data:
+                    $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Email, name, and password are required"
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Email is already in use"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/users/{id}:
+    get:
+      summary: Get user by ID
+      description: Retrieve a specific user by their ID (requires authentication, member or admin role)
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: User ID
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: User found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "User not found with ID: 123e4567-e89b-12d3-a456-426614174000"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update user information
+      description: Update an existing user's information (requires authentication and admin role)
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: User ID
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+            example:
+              firstName: "UpdatedFirst"
+              lastName: "UpdatedLast"
+              phoneNumber: "+9876543210"
+              address: "456 New Address, City, State"
+              age: 31
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "User updated successfully"
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "User not found with ID: 123e4567-e89b-12d3-a456-426614174000"
+        '409':
+          description: Email already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Email is already in use"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete a user
+      description: Delete an existing user (requires authentication and admin role)
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: User ID
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: User deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "User deleted successfully"
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "User not found with ID: 123e4567-e89b-12d3-a456-426614174000"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /api/employees:
+    get:
+      summary: Get all employees
+      description: Retrieve a paginated list of employees (requires authentication and admin role). Supports filtering by department, managerId, email, name, and phoneNumber query parameters. Email, name, and phoneNumber use case-insensitive partial matching (ILIKE).
+      tags:
+        - Employees
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: department
+          schema:
+            type: string
+          description: Filter by department (exact match)
+          example: "Engineering"
+        - in: query
+          name: managerId
+          schema:
+            type: string
+            format: uuid
+          description: Filter by manager ID
+        - in: query
+          name: email
+          schema:
+            type: string
+          description: Filter by email (case-insensitive partial match)
+          example: "john.doe"
+        - in: query
+          name: name
+          schema:
+            type: string
+          description: Filter by first name, last name, or full name (case-insensitive partial match)
+          example: "John"
+        - in: query
+          name: phoneNumber
+          schema:
+            type: string
+          description: Filter by phone number (case-insensitive partial match)
+          example: "1234"
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number (starts from 1)
+          example: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Number of items per page (max 100)
+          example: 10
+      responses:
+        '200':
+          description: Paginated list of employees
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Employee'
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                        example: 1
+                      pageSize:
+                        type: integer
+                        example: 10
+                      total:
+                        type: integer
+                        example: 25
+                      totalPages:
+                        type: integer
+                        example: 3
+                      hasNextPage:
+                        type: boolean
+                        example: true
+                      hasPreviousPage:
+                        type: boolean
+                        example: false
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied - Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Access denied. Required role: admin"
+                currentRole: "member"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create a new employee
+      description: Create a new employee (requires authentication and admin role)
+      tags:
+        - Employees
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEmployeeRequest'
+            example:
+              firstName: "John"
+              lastName: "Doe"
+              email: "john.doe@company.com"
+              phoneNumber: "+1234567890"
+              position: "Software Engineer"
+              department: "Engineering"
+              salary: 75000.00
+              hireDate: "2025-01-15"
+      responses:
+        '201':
+          description: Employee created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Employee created successfully"
+                  data:
+                    $ref: '#/components/schemas/Employee'
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "firstName, lastName, email, position, department, and hireDate are required"
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied - Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email or Employee ID already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Email is already registered"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/employees/{id}:
+    get:
+      summary: Get employee by ID
+      description: Retrieve a specific employee by their ID (requires authentication and admin role)
+      tags:
+        - Employees
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Employee ID
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Employee found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Employee'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied - Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Employee not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Employee not found with ID: 123e4567-e89b-12d3-a456-426614174000"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update employee information
+      description: Update an existing employee's information (requires authentication and admin role)
+      tags:
+        - Employees
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Employee ID
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEmployeeRequest'
+            example:
+              firstName: "UpdatedFirst"
+              lastName: "UpdatedLast"
+              position: "Senior Software Engineer"
+              salary: 85000.00
+      responses:
+        '200':
+          description: Employee updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Employee updated successfully"
+                  data:
+                    $ref: '#/components/schemas/Employee'
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Invalid hireDate format. Use YYYY-MM-DD"
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied - Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Employee not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email or Employee ID already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete an employee
+      description: Delete an existing employee (requires authentication and admin role)
+      tags:
+        - Employees
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Employee ID
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Employee deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Employee deleted successfully"
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied - Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Employee not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Employee not found with ID: 123e4567-e89b-12d3-a456-426614174000"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

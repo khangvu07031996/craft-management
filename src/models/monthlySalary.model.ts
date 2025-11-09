@@ -1,0 +1,199 @@
+import pool from '../config/database';
+import { MonthlySalaryResponse, CalculateMonthlySalaryDto } from '../types/work.types';
+import workRecordModel from './workRecord.model';
+
+class MonthlySalaryModel {
+  private mapToMonthlySalaryResponse(row: any): MonthlySalaryResponse {
+    return {
+      id: row.id,
+      employeeId: row.employee_id,
+      employee: row.employee_first_name ? {
+        id: row.employee_id,
+        firstName: row.employee_first_name,
+        lastName: row.employee_last_name,
+        employeeId: row.employee_employee_id,
+      } : undefined,
+      year: row.year,
+      month: row.month,
+      totalWorkDays: row.total_work_days,
+      totalAmount: parseFloat(row.total_amount),
+      status: row.status,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  async getAllMonthlySalaries(
+    filters: {
+      employeeId?: string;
+      year?: number;
+      month?: number;
+    },
+    page: number = 1,
+    pageSize: number = 10
+  ): Promise<{ monthlySalaries: MonthlySalaryResponse[]; total: number }> {
+    const conditions: string[] = [];
+    const values: any[] = [];
+    let paramCount = 1;
+
+    if (filters.employeeId) {
+      conditions.push(`ms.employee_id = $${paramCount}`);
+      values.push(filters.employeeId);
+      paramCount++;
+    }
+
+    if (filters.year) {
+      conditions.push(`ms.year = $${paramCount}`);
+      values.push(filters.year);
+      paramCount++;
+    }
+
+    if (filters.month) {
+      conditions.push(`ms.month = $${paramCount}`);
+      values.push(filters.month);
+      paramCount++;
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // Count total
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM monthly_salaries ms
+      ${whereClause}
+    `;
+    const countResult = await pool.query(countQuery, values);
+    const total = parseInt(countResult.rows[0].total);
+
+    // Get records with pagination
+    const offset = (page - 1) * pageSize;
+    values.push(pageSize, offset);
+    
+    const query = `
+      SELECT 
+        ms.*,
+        e.first_name as employee_first_name,
+        e.last_name as employee_last_name,
+        e.employee_id as employee_employee_id
+      FROM monthly_salaries ms
+      LEFT JOIN employees e ON ms.employee_id = e.id
+      ${whereClause}
+      ORDER BY ms.year DESC, ms.month DESC, e.last_name, e.first_name
+      LIMIT $${paramCount} OFFSET $${paramCount + 1}
+    `;
+
+    const result = await pool.query(query, values);
+    const monthlySalaries = result.rows.map((row) => this.mapToMonthlySalaryResponse(row));
+
+    return { monthlySalaries, total };
+  }
+
+  async getMonthlySalaryById(id: string): Promise<MonthlySalaryResponse | null> {
+    const query = `
+      SELECT 
+        ms.*,
+        e.first_name as employee_first_name,
+        e.last_name as employee_last_name,
+        e.employee_id as employee_employee_id
+      FROM monthly_salaries ms
+      LEFT JOIN employees e ON ms.employee_id = e.id
+      WHERE ms.id = $1
+    `;
+
+    const result = await pool.query(query, [id]);
+    
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    return this.mapToMonthlySalaryResponse(result.rows[0]);
+  }
+
+  async getMonthlySalaryByEmployeeAndMonth(
+    employeeId: string,
+    year: number,
+    month: number
+  ): Promise<MonthlySalaryResponse | null> {
+    const query = `
+      SELECT 
+        ms.*,
+        e.first_name as employee_first_name,
+        e.last_name as employee_last_name,
+        e.employee_id as employee_employee_id
+      FROM monthly_salaries ms
+      LEFT JOIN employees e ON ms.employee_id = e.id
+      WHERE ms.employee_id = $1 AND ms.year = $2 AND ms.month = $3
+    `;
+
+    const result = await pool.query(query, [employeeId, year, month]);
+    
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    return this.mapToMonthlySalaryResponse(result.rows[0]);
+  }
+
+  async calculateAndSaveMonthlySalary(data: CalculateMonthlySalaryDto): Promise<MonthlySalaryResponse> {
+    const { employeeId, year, month } = data;
+
+    // Get all work records for the month
+    const workRecords = await workRecordModel.getWorkRecordsByEmployeeAndMonth(
+      employeeId,
+      year,
+      month
+    );
+
+    // Calculate total amount and work days
+    const totalAmount = workRecords.reduce((sum, record) => sum + record.totalAmount, 0);
+    const uniqueWorkDays = new Set(workRecords.map((record) => record.workDate)).size;
+    const totalWorkDays = uniqueWorkDays;
+
+    // Check if monthly salary already exists
+    const existing = await this.getMonthlySalaryByEmployeeAndMonth(employeeId, year, month);
+
+    if (existing) {
+      // Update existing
+      const result = await pool.query(
+        `UPDATE monthly_salaries 
+         SET total_work_days = $1, total_amount = $2, status = 'draft'
+         WHERE id = $3
+         RETURNING *`,
+        [totalWorkDays, totalAmount, existing.id]
+      );
+      return this.getMonthlySalaryById(result.rows[0].id) as Promise<MonthlySalaryResponse>;
+    } else {
+      // Create new
+      const result = await pool.query(
+        `INSERT INTO monthly_salaries (
+          employee_id, year, month, total_work_days, total_amount, status
+        ) VALUES ($1, $2, $3, $4, $5, 'draft')
+        RETURNING *`,
+        [employeeId, year, month, totalWorkDays, totalAmount]
+      );
+      return this.getMonthlySalaryById(result.rows[0].id) as Promise<MonthlySalaryResponse>;
+    }
+  }
+
+  async updateMonthlySalaryStatus(
+    id: string,
+    status: 'draft' | 'confirmed' | 'paid'
+  ): Promise<MonthlySalaryResponse | null> {
+    const result = await pool.query(
+      `UPDATE monthly_salaries 
+       SET status = $1
+       WHERE id = $2
+       RETURNING *`,
+      [status, id]
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    return this.getMonthlySalaryById(id);
+  }
+}
+
+export default new MonthlySalaryModel();
+
