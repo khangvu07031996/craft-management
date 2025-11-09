@@ -4,7 +4,7 @@
   "description": "User Management Application using Node.js, TypeScript and Express.js",
   "main": "dist/app.js",
   "scripts": {
-    "build": "tsc && mkdir -p dist/database && cp src/database/init.sql dist/database/",
+    "build": "tsc && mkdir -p dist/database && cp src/database/*.sql dist/database/",
     "start": "node dist/app.js",
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "lint": "eslint . --ext .ts",

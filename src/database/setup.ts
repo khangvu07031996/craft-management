@@ -31,6 +31,32 @@ export async function setupDatabase(): Promise<void> {
         console.warn('⚠️ Status migration warning:', error.message);
       }
     }
+
+    // Add overtime configs table migration
+    try {
+      // First try to fix existing table if it has wrong schema
+      try {
+        const fixMigration = fs.readFileSync(
+          path.join(__dirname, 'fix_overtime_configs_table.sql'),
+          'utf-8'
+        );
+        await pool.query(fixMigration);
+        console.log('✅ Overtime configs table schema fixed');
+      } catch (error: any) {
+        // If fix fails, try creating fresh
+        const overtimeConfigMigration = fs.readFileSync(
+          path.join(__dirname, 'create_overtime_configs_table.sql'),
+          'utf-8'
+        );
+        await pool.query(overtimeConfigMigration);
+        console.log('✅ Overtime configs table migration completed');
+      }
+    } catch (error: any) {
+      // Migration might already be applied, that's okay
+      if (!error.message.includes('already exists') && !error.message.includes('duplicate')) {
+        console.warn('⚠️ Overtime configs migration warning:', error.message);
+      }
+    }
     
     console.log('✅ Database setup completed successfully');
   } catch (error) {

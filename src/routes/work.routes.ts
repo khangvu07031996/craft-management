@@ -6,6 +6,7 @@ import * as workItemController from '../controllers/workItem.controller';
 import * as workRecordController from '../controllers/workRecord.controller';
 import * as monthlySalaryController from '../controllers/monthlySalary.controller';
 import * as workReportController from '../controllers/workReport.controller';
+import overtimeConfigRoutes from './overtimeConfig.routes';
 
 const router = express.Router();
 
@@ -44,5 +45,8 @@ router.put('/monthly-salaries/:id/status', monthlySalaryController.updateMonthly
 // Reports routes
 router.get('/reports/weekly', workReportController.getWeeklyReport);
 router.get('/reports/monthly', workReportController.getMonthlyReport);
+
+// Overtime Config routes
+router.use('/overtime-configs', overtimeConfigRoutes);
 
 export default router;

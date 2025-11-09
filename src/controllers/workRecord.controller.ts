@@ -13,11 +13,17 @@ export const getAllWorkRecords = async (req: Request, res: Response) => {
       workTypeId: work_type_id as string | undefined,
     };
 
+    // Debug logging
+    console.log('WorkRecordController.getAllWorkRecords - Query params:', req.query);
+    console.log('WorkRecordController.getAllWorkRecords - Filters:', filters);
+
     const result = await workRecordModel.getAllWorkRecords(
       filters,
       parseInt(page as string),
       parseInt(page_size as string)
     );
+
+    console.log('WorkRecordController.getAllWorkRecords - Result count:', result.workRecords.length);
 
     res.json({
       success: true,

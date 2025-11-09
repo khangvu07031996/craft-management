@@ -62,16 +62,45 @@ class WorkRecordModel {
       paramCount++;
     }
 
-    if (filters.dateFrom) {
-      conditions.push(`wr.work_date >= $${paramCount}`);
+    // Handle date filtering
+    console.log('WorkRecordModel.getAllWorkRecords - Date filters:', {
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      areEqual: filters.dateFrom === filters.dateTo,
+    });
+
+    if (filters.dateFrom && filters.dateTo) {
+      // If dateFrom equals dateTo, filter for exact date
+      if (filters.dateFrom === filters.dateTo) {
+        console.log('WorkRecordModel - Using exact date filter:', filters.dateFrom);
+        // work_date is already DATE type, so we can compare directly
+        conditions.push(`wr.work_date = $${paramCount}::date`);
+        values.push(filters.dateFrom);
+        paramCount++;
+      } else {
+        // Date range filter
+        console.log('WorkRecordModel - Using date range filter:', filters.dateFrom, 'to', filters.dateTo);
+        conditions.push(`wr.work_date >= $${paramCount}::date`);
+        values.push(filters.dateFrom);
+        paramCount++;
+        conditions.push(`wr.work_date <= $${paramCount}::date`);
+        values.push(filters.dateTo);
+        paramCount++;
+      }
+    } else if (filters.dateFrom) {
+      // Only dateFrom specified
+      console.log('WorkRecordModel - Using dateFrom filter:', filters.dateFrom);
+      conditions.push(`wr.work_date >= $${paramCount}::date`);
       values.push(filters.dateFrom);
       paramCount++;
-    }
-
-    if (filters.dateTo) {
-      conditions.push(`wr.work_date <= $${paramCount}`);
+    } else if (filters.dateTo) {
+      // Only dateTo specified
+      console.log('WorkRecordModel - Using dateTo filter:', filters.dateTo);
+      conditions.push(`wr.work_date <= $${paramCount}::date`);
       values.push(filters.dateTo);
       paramCount++;
+    } else {
+      console.log('WorkRecordModel - No date filters applied');
     }
 
     if (filters.workTypeId) {
@@ -82,18 +111,24 @@ class WorkRecordModel {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // Count total
+    // Count total - use separate values array
     const countQuery = `
       SELECT COUNT(*) as total
       FROM work_records wr
       ${whereClause}
     `;
+    console.log('WorkRecordModel - Count query:', countQuery);
+    console.log('WorkRecordModel - Count values:', values);
     const countResult = await pool.query(countQuery, values);
     const total = parseInt(countResult.rows[0].total);
+    console.log('WorkRecordModel - Total count:', total);
 
-    // Get records with pagination
+    // Get records with pagination - add pagination params
     const offset = (page - 1) * pageSize;
-    values.push(pageSize, offset);
+    const dataValues = [...values]; // Copy values array
+    const limitParam = paramCount;
+    const offsetParam = paramCount + 1;
+    dataValues.push(pageSize, offset);
     
     const query = `
       SELECT 
@@ -113,11 +148,14 @@ class WorkRecordModel {
       LEFT JOIN work_items wi ON wr.work_item_id = wi.id
       LEFT JOIN users u ON wr.created_by = u.id
       ${whereClause}
-      ORDER BY wr.work_date DESC, wr.created_at DESC
-      LIMIT $${paramCount} OFFSET $${paramCount + 1}
+      ORDER BY wr.work_date DESC, e.last_name ASC, e.first_name ASC
+      LIMIT $${limitParam} OFFSET $${offsetParam}
     `;
 
-    const result = await pool.query(query, values);
+    console.log('WorkRecordModel - Data query:', query);
+    console.log('WorkRecordModel - Data values:', dataValues);
+    const result = await pool.query(query, dataValues);
+    console.log('WorkRecordModel - Result rows:', result.rows.length);
     const workRecords = result.rows.map((row) => this.mapToWorkRecordResponse(row));
 
     return { workRecords, total };
