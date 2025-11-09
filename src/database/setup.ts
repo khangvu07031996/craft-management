@@ -57,6 +57,21 @@ export async function setupDatabase(): Promise<void> {
         console.warn('⚠️ Overtime configs migration warning:', error.message);
       }
     }
+
+    // Add overtime columns to work_records table
+    try {
+      const overtimeWorkRecordsMigration = fs.readFileSync(
+        path.join(__dirname, 'add_overtime_to_work_records.sql'),
+        'utf-8'
+      );
+      await pool.query(overtimeWorkRecordsMigration);
+      console.log('✅ Overtime columns migration for work_records completed');
+    } catch (error: any) {
+      // Migration might already be applied, that's okay
+      if (!error.message.includes('already exists') && !error.message.includes('duplicate') && !error.message.includes('column') && !error.message.includes('already exists')) {
+        console.warn('⚠️ Overtime work_records migration warning:', error.message);
+      }
+    }
     
     console.log('✅ Database setup completed successfully');
   } catch (error) {

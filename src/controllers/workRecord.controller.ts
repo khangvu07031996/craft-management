@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import workRecordModel from '../models/workRecord.model';
+import workTypeModel from '../models/workType.model';
 import { CreateWorkRecordDto, UpdateWorkRecordDto } from '../types/work.types';
 
 export const getAllWorkRecords = async (req: Request, res: Response) => {
@@ -97,6 +98,34 @@ export const createWorkRecord = async (req: Request, res: Response) => {
       });
     }
 
+    // Validate overtime fields
+    if (workRecordData.isOvertime) {
+      // Get work type to check calculation type
+      const workType = await workTypeModel.getWorkTypeById(workRecordData.workTypeId);
+      if (!workType) {
+        return res.status(400).json({
+          success: false,
+          message: 'Work type not found',
+        });
+      }
+
+      if (workType.calculationType === 'weld_count') {
+        if (!workRecordData.overtimeQuantity || workRecordData.overtimeQuantity <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Số lượng hàng tăng ca là bắt buộc và phải lớn hơn 0',
+          });
+        }
+      } else if (workType.calculationType === 'hourly') {
+        if (!workRecordData.overtimeHours || workRecordData.overtimeHours <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Số giờ tăng ca là bắt buộc và phải lớn hơn 0',
+          });
+        }
+      }
+    }
+
     const workRecord = await workRecordModel.createWorkRecord(workRecordData, userId);
 
     res.status(201).json({
@@ -124,6 +153,43 @@ export const updateWorkRecord = async (req: Request, res: Response) => {
         success: false,
         message: 'Quantity must be greater than 0',
       });
+    }
+
+    // Validate overtime fields
+    if (workRecordData.isOvertime) {
+      // Get existing record to determine work type
+      const existing = await workRecordModel.getWorkRecordById(id);
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: 'Work record not found',
+        });
+      }
+
+      const workTypeId = workRecordData.workTypeId || existing.workTypeId;
+      const workType = await workTypeModel.getWorkTypeById(workTypeId);
+      if (!workType) {
+        return res.status(400).json({
+          success: false,
+          message: 'Work type not found',
+        });
+      }
+
+      if (workType.calculationType === 'weld_count') {
+        if (!workRecordData.overtimeQuantity || workRecordData.overtimeQuantity <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Số lượng hàng tăng ca là bắt buộc và phải lớn hơn 0',
+          });
+        }
+      } else if (workType.calculationType === 'hourly') {
+        if (!workRecordData.overtimeHours || workRecordData.overtimeHours <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Số giờ tăng ca là bắt buộc và phải lớn hơn 0',
+          });
+        }
+      }
     }
 
     const workRecord = await workRecordModel.updateWorkRecord(id, workRecordData);

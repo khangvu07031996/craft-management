@@ -2,6 +2,7 @@ import pool from '../config/database';
 import { WorkRecordResponse, CreateWorkRecordDto, UpdateWorkRecordDto } from '../types/work.types';
 import workTypeModel from './workType.model';
 import workItemModel from './workItem.model';
+import overtimeConfigModel from './overtimeConfig.model';
 
 class WorkRecordModel {
   private mapToWorkRecordResponse(row: any): WorkRecordResponse {
@@ -30,6 +31,9 @@ class WorkRecordModel {
       quantity: parseFloat(row.quantity),
       unitPrice: parseFloat(row.unit_price),
       totalAmount: parseFloat(row.total_amount),
+      isOvertime: row.is_overtime || false,
+      overtimeQuantity: row.overtime_quantity ? parseFloat(row.overtime_quantity) : undefined,
+      overtimeHours: row.overtime_hours ? parseFloat(row.overtime_hours) : undefined,
       notes: row.notes || undefined,
       createdBy: row.created_by,
       createdByUser: row.created_by_first_name ? {
@@ -192,7 +196,7 @@ class WorkRecordModel {
   }
 
   async createWorkRecord(workRecordData: CreateWorkRecordDto, createdBy: string): Promise<WorkRecordResponse> {
-    const { employeeId, workDate, workTypeId, workItemId, quantity, unitPrice, notes } = workRecordData;
+    const { employeeId, workDate, workTypeId, workItemId, quantity, unitPrice, notes, isOvertime, overtimeQuantity, overtimeHours } = workRecordData;
 
     // Get work type to determine calculation
     const workType = await workTypeModel.getWorkTypeById(workTypeId);
@@ -218,14 +222,26 @@ class WorkRecordModel {
       finalUnitPrice = workItem.pricePerWeld;
       finalWorkItemId = workItemId;
       
-      // Calculate total amount: số sản phẩm × số mối hàn/SP × giá/mối hàn
-      const totalAmount = quantity * workItem.weldsPerItem * workItem.pricePerWeld;
+      // Calculate base amount: số sản phẩm × số mối hàn/SP × giá/mối hàn
+      let totalAmount = quantity * workItem.weldsPerItem * workItem.pricePerWeld;
+      
+      // Add overtime amount if applicable
+      if (isOvertime && overtimeQuantity && overtimeQuantity > 0) {
+        // Get overtime config
+        const overtimeConfig = await overtimeConfigModel.getOvertimeConfigByWorkTypeId(workTypeId);
+        if (overtimeConfig && overtimeConfig.overtimePricePerWeld > 0) {
+          // Tiền tăng ca = số lượng hàng tăng ca × số mối hàn/SP × (giá/mối hàn + giá tăng ca/mối hàn)
+          const overtimeAmount = overtimeQuantity * workItem.weldsPerItem * (workItem.pricePerWeld + overtimeConfig.overtimePricePerWeld);
+          totalAmount += overtimeAmount;
+        }
+      }
       
       const result = await pool.query(
         `INSERT INTO work_records (
           employee_id, work_date, work_type_id, work_item_id,
-          quantity, unit_price, total_amount, notes, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          quantity, unit_price, total_amount, notes, created_by,
+          is_overtime, overtime_quantity, overtime_hours
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *`,
         [
           employeeId,
@@ -237,6 +253,9 @@ class WorkRecordModel {
           totalAmount,
           notes || null,
           createdBy,
+          isOvertime || false,
+          overtimeQuantity || null,
+          null, // overtime_hours is null for weld_count
         ]
       );
 
@@ -245,14 +264,27 @@ class WorkRecordModel {
       // For hourly or daily, use provided unitPrice or workType.unitPrice
       finalUnitPrice = unitPrice !== undefined ? unitPrice : workType.unitPrice;
       
-      // Calculate total amount: quantity × unitPrice
-      const totalAmount = quantity * finalUnitPrice;
+      // Calculate base amount: quantity × unitPrice
+      let totalAmount = quantity * finalUnitPrice;
+      
+      // Add overtime amount if applicable (only for hourly)
+      if (workType.calculationType === 'hourly' && isOvertime && overtimeHours && overtimeHours > 0) {
+        // Get overtime config
+        const overtimeConfig = await overtimeConfigModel.getOvertimeConfigByWorkTypeId(workTypeId);
+        if (overtimeConfig && overtimeConfig.overtimePercentage > 0) {
+          // Tiền tăng ca = số giờ tăng ca × (unitPrice + unitPrice × overtime_percentage/100)
+          // = số giờ tăng ca × unitPrice × (1 + overtime_percentage/100)
+          const overtimeAmount = overtimeHours * finalUnitPrice * (1 + overtimeConfig.overtimePercentage / 100);
+          totalAmount += overtimeAmount;
+        }
+      }
       
       const result = await pool.query(
         `INSERT INTO work_records (
           employee_id, work_date, work_type_id, work_item_id,
-          quantity, unit_price, total_amount, notes, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          quantity, unit_price, total_amount, notes, created_by,
+          is_overtime, overtime_quantity, overtime_hours
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *`,
         [
           employeeId,
@@ -264,6 +296,9 @@ class WorkRecordModel {
           totalAmount,
           notes || null,
           createdBy,
+          isOvertime || false,
+          null, // overtime_quantity is null for hourly/daily
+          overtimeHours || null,
         ]
       );
 
@@ -286,6 +321,9 @@ class WorkRecordModel {
       quantity = existing.quantity,
       unitPrice,
       notes = existing.notes,
+      isOvertime = existing.isOvertime,
+      overtimeQuantity = existing.overtimeQuantity,
+      overtimeHours = existing.overtimeHours,
     } = workRecordData;
 
     // Get work type
@@ -311,14 +349,26 @@ class WorkRecordModel {
       finalUnitPrice = workItem.pricePerWeld;
       finalWorkItemId = workItemId;
       
-      // Calculate total amount: số sản phẩm × số mối hàn/SP × giá/mối hàn
-      const totalAmount = quantity * workItem.weldsPerItem * workItem.pricePerWeld;
+      // Calculate base amount: số sản phẩm × số mối hàn/SP × giá/mối hàn
+      let totalAmount = quantity * workItem.weldsPerItem * workItem.pricePerWeld;
+      
+      // Add overtime amount if applicable
+      if (isOvertime && overtimeQuantity && overtimeQuantity > 0) {
+        // Get overtime config
+        const overtimeConfig = await overtimeConfigModel.getOvertimeConfigByWorkTypeId(workTypeId);
+        if (overtimeConfig && overtimeConfig.overtimePricePerWeld > 0) {
+          // Tiền tăng ca = số lượng hàng tăng ca × số mối hàn/SP × (giá/mối hàn + giá tăng ca/mối hàn)
+          const overtimeAmount = overtimeQuantity * workItem.weldsPerItem * (workItem.pricePerWeld + overtimeConfig.overtimePricePerWeld);
+          totalAmount += overtimeAmount;
+        }
+      }
       
       const result = await pool.query(
         `UPDATE work_records 
          SET employee_id = $1, work_date = $2, work_type_id = $3, work_item_id = $4,
-             quantity = $5, unit_price = $6, total_amount = $7, notes = $8, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $9
+             quantity = $5, unit_price = $6, total_amount = $7, notes = $8, updated_at = CURRENT_TIMESTAMP,
+             is_overtime = $9, overtime_quantity = $10, overtime_hours = $11
+         WHERE id = $12
          RETURNING *`,
         [
           employeeId,
@@ -329,6 +379,9 @@ class WorkRecordModel {
           finalUnitPrice,
           totalAmount,
           notes || null,
+          isOvertime || false,
+          overtimeQuantity || null,
+          null, // overtime_hours is null for weld_count
           id,
         ]
       );
@@ -341,14 +394,27 @@ class WorkRecordModel {
     } else {
       finalUnitPrice = unitPrice !== undefined ? unitPrice : workType.unitPrice;
       
-      // Calculate total amount: quantity × unitPrice
-      const totalAmount = quantity * finalUnitPrice;
+      // Calculate base amount: quantity × unitPrice
+      let totalAmount = quantity * finalUnitPrice;
+      
+      // Add overtime amount if applicable (only for hourly)
+      if (workType.calculationType === 'hourly' && isOvertime && overtimeHours && overtimeHours > 0) {
+        // Get overtime config
+        const overtimeConfig = await overtimeConfigModel.getOvertimeConfigByWorkTypeId(workTypeId);
+        if (overtimeConfig && overtimeConfig.overtimePercentage > 0) {
+          // Tiền tăng ca = số giờ tăng ca × (unitPrice + unitPrice × overtime_percentage/100)
+          // = số giờ tăng ca × unitPrice × (1 + overtime_percentage/100)
+          const overtimeAmount = overtimeHours * finalUnitPrice * (1 + overtimeConfig.overtimePercentage / 100);
+          totalAmount += overtimeAmount;
+        }
+      }
       
       const result = await pool.query(
         `UPDATE work_records 
          SET employee_id = $1, work_date = $2, work_type_id = $3, work_item_id = $4,
-             quantity = $5, unit_price = $6, total_amount = $7, notes = $8, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $9
+             quantity = $5, unit_price = $6, total_amount = $7, notes = $8, updated_at = CURRENT_TIMESTAMP,
+             is_overtime = $9, overtime_quantity = $10, overtime_hours = $11
+         WHERE id = $12
          RETURNING *`,
         [
           employeeId,
@@ -359,6 +425,9 @@ class WorkRecordModel {
           finalUnitPrice,
           totalAmount,
           notes || null,
+          isOvertime || false,
+          null, // overtime_quantity is null for hourly/daily
+          overtimeHours || null,
           id,
         ]
       );
