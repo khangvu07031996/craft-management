@@ -3,6 +3,26 @@ import { WorkItemResponse, CreateWorkItemDto, UpdateWorkItemDto } from '../types
 
 class WorkItemModel {
   private mapToWorkItemResponse(row: any): WorkItemResponse {
+    // Format date to avoid timezone issues
+    const formatDate = (date: Date | string | null): string | undefined => {
+      if (!date) return undefined;
+      
+      // If it's already a string in YYYY-MM-DD format, return as is
+      if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return date;
+      }
+      
+      // If it's a Date object, format using UTC methods to avoid timezone conversion
+      // PostgreSQL DATE type doesn't have time, so we use UTC methods
+      const d = typeof date === 'string' ? new Date(date + 'T00:00:00') : date;
+      
+      // Use UTC date methods to avoid timezone conversion
+      const year = d.getUTCFullYear();
+      const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
     return {
       id: row.id,
       name: row.name,
@@ -11,14 +31,14 @@ class WorkItemModel {
       totalQuantity: parseInt(row.total_quantity || 0),
       weldsPerItem: parseInt(row.welds_per_item || 0),
       status: (row.status || 'Tạo mới') as 'Tạo mới' | 'Đang sản xuất' | 'Hoàn thành',
-      estimatedDeliveryDate: row.estimated_delivery_date ? row.estimated_delivery_date.toISOString().split('T')[0] : undefined,
+      estimatedDeliveryDate: row.estimated_delivery_date_str || formatDate(row.estimated_delivery_date),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
   }
 
   async getAllWorkItems(difficultyLevel?: string): Promise<WorkItemResponse[]> {
-    let query = 'SELECT * FROM work_items';
+    let query = 'SELECT *, TO_CHAR(estimated_delivery_date, \'YYYY-MM-DD\') as estimated_delivery_date_str FROM work_items';
     const values: any[] = [];
 
     if (difficultyLevel) {
@@ -50,7 +70,7 @@ class WorkItemModel {
   }
 
   async getWorkItemById(id: string): Promise<WorkItemResponse | null> {
-    const result = await pool.query('SELECT * FROM work_items WHERE id = $1', [id]);
+    const result = await pool.query('SELECT *, TO_CHAR(estimated_delivery_date, \'YYYY-MM-DD\') as estimated_delivery_date_str FROM work_items WHERE id = $1', [id]);
     
     if (result.rows.length === 0) {
       return null;
@@ -76,7 +96,7 @@ class WorkItemModel {
     const result = await pool.query(
       `INSERT INTO work_items (name, difficulty_level, price_per_weld, total_quantity, welds_per_item, status, estimated_delivery_date)
        VALUES ($1, $2, $3, $4, $5, 'Tạo mới', $6)
-       RETURNING *`,
+       RETURNING *, TO_CHAR(estimated_delivery_date, 'YYYY-MM-DD') as estimated_delivery_date_str`,
       [name, difficultyLevel, pricePerWeld, totalQuantity, weldsPerItem, estimatedDeliveryDate || null]
     );
 
@@ -141,7 +161,7 @@ class WorkItemModel {
       UPDATE work_items 
       SET ${updates.join(', ')} 
       WHERE id = $${paramCount}
-      RETURNING *
+      RETURNING *, TO_CHAR(estimated_delivery_date, 'YYYY-MM-DD') as estimated_delivery_date_str
     `;
 
     const result = await pool.query(query, values);
@@ -157,6 +177,20 @@ class WorkItemModel {
       // Lazy import to avoid circular dependency
       const workRecordModel = (await import('./workRecord.model')).default;
       const quantityMade = await workRecordModel.getTotalQuantityMadeByWorkItem(id);
+      
+      // If totalQuantity was updated, recalculate status using the new totalQuantity
+      if (workItemData.totalQuantity !== undefined) {
+        await this.updateWorkItemStatus(id, workItemData.totalQuantity).catch((error) => {
+          console.error('Error updating work item status after totalQuantity change:', error);
+        });
+        
+        // Re-fetch work item to get updated status after updateWorkItemStatus
+        const updatedWorkItem = await this.getWorkItemById(id);
+        if (updatedWorkItem) {
+          return { ...updatedWorkItem, quantityMade };
+        }
+      }
+      
       return { ...workItem, quantityMade };
     } catch (error) {
       console.error(`Error fetching quantity made for work item ${id}:`, error);
@@ -169,11 +203,21 @@ class WorkItemModel {
     return result.rows.length > 0;
   }
 
-  async updateWorkItemStatus(workItemId: string): Promise<void> {
-    // Get work item to access totalQuantity
-    const workItem = await this.getWorkItemById(workItemId);
-    if (!workItem) {
-      return;
+  async updateWorkItemStatus(workItemId: string, totalQuantity?: number): Promise<void> {
+    // Get work item to access totalQuantity if not provided
+    let workItem: WorkItemResponse | null = null;
+    let finalTotalQuantity: number;
+    
+    if (totalQuantity !== undefined) {
+      // Use provided totalQuantity (from update)
+      finalTotalQuantity = totalQuantity;
+    } else {
+      // Get work item to access totalQuantity
+      workItem = await this.getWorkItemById(workItemId);
+      if (!workItem) {
+        return;
+      }
+      finalTotalQuantity = workItem.totalQuantity;
     }
 
     // Lazy import to avoid circular dependency
@@ -184,7 +228,7 @@ class WorkItemModel {
 
     // Determine status based on totalQuantityMade vs totalQuantity
     let newStatus: 'Tạo mới' | 'Đang sản xuất' | 'Hoàn thành';
-    if (totalQuantityMade >= workItem.totalQuantity) {
+    if (totalQuantityMade >= finalTotalQuantity) {
       newStatus = 'Hoàn thành';
     } else if (totalQuantityMade > 0) {
       newStatus = 'Đang sản xuất';
