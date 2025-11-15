@@ -135,7 +135,14 @@ export const createWorkRecord = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error creating work record:', error);
-    res.status(500).json({
+    // Check if it's a validation error (quantity exceeded)
+    const isValidationError = error.message && (
+      error.message.includes('vượt quá số lượng cần làm') ||
+      error.message.includes('Work item not found') ||
+      error.message.includes('Work item is required')
+    );
+    const statusCode = isValidationError ? 400 : 500;
+    res.status(statusCode).json({
       success: false,
       message: error.message || 'Failed to create work record',
       error: error.message,
@@ -208,7 +215,14 @@ export const updateWorkRecord = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error updating work record:', error);
-    res.status(500).json({
+    // Check if it's a validation error (quantity exceeded)
+    const isValidationError = error.message && (
+      error.message.includes('vượt quá số lượng cần làm') ||
+      error.message.includes('Work item not found') ||
+      error.message.includes('Work item is required')
+    );
+    const statusCode = isValidationError ? 400 : 500;
+    res.status(statusCode).json({
       success: false,
       message: error.message || 'Failed to update work record',
       error: error.message,
@@ -279,6 +293,32 @@ export const getWorkRecordsByEmployeeAndMonth = async (req: Request, res: Respon
     res.status(500).json({
       success: false,
       message: 'Failed to fetch work records',
+      error: error.message,
+    });
+  }
+};
+
+export const getTotalQuantityMadeByWorkItem = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { excludeRecordId } = req.query;
+    const totalQuantity = await workRecordModel.getTotalQuantityMadeByWorkItem(
+      id,
+      excludeRecordId as string | undefined
+    );
+
+    res.json({
+      success: true,
+      data: {
+        workItemId: id,
+        totalQuantityMade: totalQuantity,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching total quantity made by work item:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch total quantity made',
       error: error.message,
     });
   }

@@ -217,6 +217,18 @@ class WorkRecordModel {
       if (!workItem) {
         throw new Error('Work item not found');
       }
+      
+      // Validate total quantity made doesn't exceed work item's totalQuantity
+      const existingTotal = await this.getTotalQuantityMadeByWorkItem(workItemId);
+      const newQuantity = quantity + (overtimeQuantity || 0);
+      const newTotal = existingTotal + newQuantity;
+      
+      if (newTotal > workItem.totalQuantity) {
+        throw new Error(
+          `Tổng số lượng sản phẩm đã làm (${existingTotal} SP) cộng với số lượng mới (${newQuantity} SP) = ${newTotal} SP vượt quá số lượng cần làm (${workItem.totalQuantity} SP). Số lượng còn lại: ${workItem.totalQuantity - existingTotal} SP`
+        );
+      }
+      
       // For welders: quantity is number of products
       // totalAmount = quantity (số sản phẩm) × weldsPerItem (số mối hàn/SP) × pricePerWeld (giá/mối hàn)
       finalUnitPrice = workItem.pricePerWeld;
@@ -344,6 +356,20 @@ class WorkRecordModel {
       if (!workItem) {
         throw new Error('Work item not found');
       }
+      
+      // Validate total quantity made doesn't exceed work item's totalQuantity
+      // Exclude current record from existing total calculation
+      const existingTotal = await this.getTotalQuantityMadeByWorkItem(workItemId, id);
+      const newQuantity = quantity + (overtimeQuantity || 0);
+      // Calculate: existingTotal (excluding current record) + newQuantity
+      const newTotal = existingTotal + newQuantity;
+      
+      if (newTotal > workItem.totalQuantity) {
+        throw new Error(
+          `Tổng số lượng sản phẩm đã làm (${existingTotal} SP) cộng với số lượng mới (${newQuantity} SP) = ${newTotal} SP vượt quá số lượng cần làm (${workItem.totalQuantity} SP). Số lượng còn lại: ${workItem.totalQuantity - existingTotal} SP`
+        );
+      }
+      
       // For welders: quantity is number of products
       // totalAmount = quantity (số sản phẩm) × weldsPerItem (số mối hàn/SP) × pricePerWeld (giá/mối hàn)
       finalUnitPrice = workItem.pricePerWeld;
@@ -475,6 +501,23 @@ class WorkRecordModel {
 
     const result = await pool.query(query, [employeeId, year, month]);
     return result.rows.map((row) => this.mapToWorkRecordResponse(row));
+  }
+
+  async getTotalQuantityMadeByWorkItem(workItemId: string, excludeRecordId?: string): Promise<number> {
+    let query = `
+      SELECT COALESCE(SUM(quantity + COALESCE(overtime_quantity, 0)), 0) as total
+      FROM work_records
+      WHERE work_item_id = $1
+    `;
+    const values: any[] = [workItemId];
+
+    if (excludeRecordId) {
+      query += ` AND id != $2`;
+      values.push(excludeRecordId);
+    }
+
+    const result = await pool.query(query, values);
+    return parseFloat(result.rows[0].total) || 0;
   }
 }
 

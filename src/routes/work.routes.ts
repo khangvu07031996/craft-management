@@ -27,6 +27,7 @@ router.get('/items/:id', workItemController.getWorkItemById);
 router.post('/items', workItemController.createWorkItem);
 router.put('/items/:id', workItemController.updateWorkItem);
 router.delete('/items/:id', workItemController.deleteWorkItem);
+router.get('/items/:id/total-made', workRecordController.getTotalQuantityMadeByWorkItem);
 
 // Work Records routes
 router.get('/records', workRecordController.getAllWorkRecords);
