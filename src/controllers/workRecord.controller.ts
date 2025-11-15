@@ -135,9 +135,10 @@ export const createWorkRecord = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error creating work record:', error);
-    // Check if it's a validation error (quantity exceeded)
+    // Check if it's a validation error (quantity exceeded or hours exceeded)
     const isValidationError = error.message && (
       error.message.includes('vượt quá số lượng cần làm') ||
+      error.message.includes('vượt quá 24 giờ') ||
       error.message.includes('Work item not found') ||
       error.message.includes('Work item is required')
     );
@@ -215,9 +216,10 @@ export const updateWorkRecord = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error updating work record:', error);
-    // Check if it's a validation error (quantity exceeded)
+    // Check if it's a validation error (quantity exceeded or hours exceeded)
     const isValidationError = error.message && (
       error.message.includes('vượt quá số lượng cần làm') ||
+      error.message.includes('vượt quá 24 giờ') ||
       error.message.includes('Work item not found') ||
       error.message.includes('Work item is required')
     );
@@ -319,6 +321,34 @@ export const getTotalQuantityMadeByWorkItem = async (req: Request, res: Response
     res.status(500).json({
       success: false,
       message: 'Failed to fetch total quantity made',
+      error: error.message,
+    });
+  }
+};
+
+export const getTotalHoursWorkedInDay = async (req: Request, res: Response) => {
+  try {
+    const { employeeId, workDate } = req.params;
+    const { excludeRecordId } = req.query;
+    const totalHours = await workRecordModel.getTotalHoursWorkedInDay(
+      employeeId,
+      workDate,
+      excludeRecordId as string | undefined
+    );
+
+    res.json({
+      success: true,
+      data: {
+        employeeId,
+        workDate,
+        totalHoursWorked: totalHours,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching total hours worked in day:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch total hours worked',
       error: error.message,
     });
   }

@@ -276,6 +276,19 @@ class WorkRecordModel {
       // For hourly or daily, use provided unitPrice or workType.unitPrice
       finalUnitPrice = unitPrice !== undefined ? unitPrice : workType.unitPrice;
       
+      // Validate total hours worked doesn't exceed 24 hours per day (only for hourly)
+      if (workType.calculationType === 'hourly') {
+        const existingTotalHours = await this.getTotalHoursWorkedInDay(employeeId, workDate);
+        const newHours = quantity + (overtimeHours || 0);
+        const newTotal = existingTotalHours + newHours;
+        
+        if (newTotal > 24) {
+          throw new Error(
+            `Tổng số giờ làm việc trong ngày (${existingTotalHours} giờ) cộng với số giờ mới (${newHours} giờ) = ${newTotal} giờ vượt quá 24 giờ/ngày. Số giờ còn lại: ${24 - existingTotalHours} giờ`
+          );
+        }
+      }
+      
       // Calculate base amount: quantity × unitPrice
       let totalAmount = quantity * finalUnitPrice;
       
@@ -420,6 +433,20 @@ class WorkRecordModel {
     } else {
       finalUnitPrice = unitPrice !== undefined ? unitPrice : workType.unitPrice;
       
+      // Validate total hours worked doesn't exceed 24 hours per day (only for hourly)
+      if (workType.calculationType === 'hourly') {
+        // Exclude current record from existing total calculation
+        const existingTotalHours = await this.getTotalHoursWorkedInDay(employeeId, workDate, id);
+        const newHours = quantity + (overtimeHours || 0);
+        const newTotal = existingTotalHours + newHours;
+        
+        if (newTotal > 24) {
+          throw new Error(
+            `Tổng số giờ làm việc trong ngày (${existingTotalHours} giờ) cộng với số giờ mới (${newHours} giờ) = ${newTotal} giờ vượt quá 24 giờ/ngày. Số giờ còn lại: ${24 - existingTotalHours} giờ`
+          );
+        }
+      }
+      
       // Calculate base amount: quantity × unitPrice
       let totalAmount = quantity * finalUnitPrice;
       
@@ -513,6 +540,26 @@ class WorkRecordModel {
 
     if (excludeRecordId) {
       query += ` AND id != $2`;
+      values.push(excludeRecordId);
+    }
+
+    const result = await pool.query(query, values);
+    return parseFloat(result.rows[0].total) || 0;
+  }
+
+  async getTotalHoursWorkedInDay(employeeId: string, workDate: string, excludeRecordId?: string): Promise<number> {
+    let query = `
+      SELECT COALESCE(SUM(wr.quantity + COALESCE(wr.overtime_hours, 0)), 0) as total
+      FROM work_records wr
+      INNER JOIN work_types wt ON wr.work_type_id = wt.id
+      WHERE wr.employee_id = $1
+        AND wr.work_date = $2::date
+        AND wt.calculation_type = 'hourly'
+    `;
+    const values: any[] = [employeeId, workDate];
+
+    if (excludeRecordId) {
+      query += ` AND wr.id != $3`;
       values.push(excludeRecordId);
     }
 

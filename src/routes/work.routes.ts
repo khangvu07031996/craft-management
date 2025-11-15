@@ -30,6 +30,7 @@ router.delete('/items/:id', workItemController.deleteWorkItem);
 router.get('/items/:id/total-made', workRecordController.getTotalQuantityMadeByWorkItem);
 
 // Work Records routes
+router.get('/records/hours/:employeeId/:workDate', workRecordController.getTotalHoursWorkedInDay);
 router.get('/records', workRecordController.getAllWorkRecords);
 router.get('/records/by-employee-month', workRecordController.getWorkRecordsByEmployeeAndMonth);
 router.get('/records/:id', workRecordController.getWorkRecordById);
