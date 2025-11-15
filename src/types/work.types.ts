@@ -17,6 +17,9 @@ export interface WorkItemResponse {
   pricePerWeld: number;
   totalQuantity: number;
   weldsPerItem: number;
+  status: 'Tạo mới' | 'Đang sản xuất' | 'Hoàn thành';
+  estimatedDeliveryDate?: string;
+  quantityMade?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,6 +30,7 @@ export interface CreateWorkItemDto {
   pricePerWeld: number;
   totalQuantity: number;
   weldsPerItem: number;
+  estimatedDeliveryDate?: string;
 }
 
 export interface UpdateWorkItemDto {
@@ -35,6 +39,8 @@ export interface UpdateWorkItemDto {
   pricePerWeld?: number;
   totalQuantity?: number;
   weldsPerItem?: number;
+  status?: string;
+  estimatedDeliveryDate?: string;
 }
 
 // Work Record Types

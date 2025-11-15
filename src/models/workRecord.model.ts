@@ -271,7 +271,16 @@ class WorkRecordModel {
         ]
       );
 
-      return this.getWorkRecordById(result.rows[0].id) as Promise<WorkRecordResponse>;
+      const workRecord = await this.getWorkRecordById(result.rows[0].id) as WorkRecordResponse;
+      
+      // Update work item status if workItemId exists
+      if (finalWorkItemId) {
+        await workItemModel.updateWorkItemStatus(finalWorkItemId).catch((error) => {
+          console.error('Error updating work item status:', error);
+        });
+      }
+
+      return workRecord;
     } else {
       // For hourly or daily, use provided unitPrice or workType.unitPrice
       finalUnitPrice = unitPrice !== undefined ? unitPrice : workType.unitPrice;
@@ -327,7 +336,16 @@ class WorkRecordModel {
         ]
       );
 
-      return this.getWorkRecordById(result.rows[0].id) as Promise<WorkRecordResponse>;
+      const workRecord = await this.getWorkRecordById(result.rows[0].id) as WorkRecordResponse;
+      
+      // Update work item status if workItemId exists
+      if (finalWorkItemId) {
+        await workItemModel.updateWorkItemStatus(finalWorkItemId).catch((error) => {
+          console.error('Error updating work item status:', error);
+        });
+      }
+
+      return workRecord;
     }
   }
 
@@ -429,7 +447,16 @@ class WorkRecordModel {
         return null;
       }
 
-      return this.getWorkRecordById(id);
+      const workRecord = await this.getWorkRecordById(id);
+      
+      // Update work item status if workItemId exists
+      if (finalWorkItemId) {
+        await workItemModel.updateWorkItemStatus(finalWorkItemId).catch((error) => {
+          console.error('Error updating work item status:', error);
+        });
+      }
+
+      return workRecord;
     } else {
       finalUnitPrice = unitPrice !== undefined ? unitPrice : workType.unitPrice;
       
@@ -489,13 +516,36 @@ class WorkRecordModel {
         return null;
       }
 
-      return this.getWorkRecordById(id);
+      const workRecord = await this.getWorkRecordById(id);
+      
+      // Note: For hourly/daily work types, there's no workItemId, so no status update needed
+      // But if workItemId exists (shouldn't happen for hourly/daily, but just in case)
+      if (finalWorkItemId) {
+        await workItemModel.updateWorkItemStatus(finalWorkItemId).catch((error) => {
+          console.error('Error updating work item status:', error);
+        });
+      }
+
+      return workRecord;
     }
   }
 
   async deleteWorkRecord(id: string): Promise<boolean> {
+    // Get work item ID before deleting
+    const existing = await this.getWorkRecordById(id);
+    const workItemId = existing?.workItemId;
+
     const result = await pool.query('DELETE FROM work_records WHERE id = $1 RETURNING id', [id]);
-    return result.rows.length > 0;
+    const deleted = result.rows.length > 0;
+
+    // Update work item status if workItemId existed
+    if (deleted && workItemId) {
+      await workItemModel.updateWorkItemStatus(workItemId).catch((error) => {
+        console.error('Error updating work item status:', error);
+      });
+    }
+
+    return deleted;
   }
 
   async getWorkRecordsByEmployeeAndMonth(
