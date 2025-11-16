@@ -8,13 +8,13 @@ export const getAllWorkTypes = async (req: Request, res: Response) => {
       department as string | undefined
     );
 
-    res.json({
+    return res.json({
       success: true,
       data: workTypes,
     });
   } catch (error: any) {
     console.error('Error fetching work types:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch work types',
       error: error.message,
@@ -34,13 +34,13 @@ export const getWorkTypeById = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: workType,
     });
   } catch (error: any) {
     console.error('Error fetching work type:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch work type',
       error: error.message,
@@ -81,14 +81,14 @@ export const createWorkType = async (req: Request, res: Response) => {
       unitPrice,
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       data: workType,
       message: 'Work type created successfully',
     });
   } catch (error: any) {
     console.error('Error creating work type:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to create work type',
       error: error.message,
@@ -129,14 +129,14 @@ export const updateWorkType = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: workType,
       message: 'Work type updated successfully',
     });
   } catch (error: any) {
     console.error('Error updating work type:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to update work type',
       error: error.message,
@@ -156,13 +156,13 @@ export const deleteWorkType = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Work type deleted successfully',
     });
   } catch (error: any) {
     console.error('Error deleting work type:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to delete work type',
       error: error.message,

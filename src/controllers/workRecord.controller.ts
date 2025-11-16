@@ -26,7 +26,7 @@ export const getAllWorkRecords = async (req: Request, res: Response) => {
 
     console.log('WorkRecordController.getAllWorkRecords - Result count:', result.workRecords.length);
 
-    res.json({
+    return res.json({
       success: true,
       data: result.workRecords,
       pagination: {
@@ -38,7 +38,7 @@ export const getAllWorkRecords = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error fetching work records:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch work records',
       error: error.message,
@@ -58,13 +58,13 @@ export const getWorkRecordById = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: workRecord,
     });
   } catch (error: any) {
     console.error('Error fetching work record:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch work record',
       error: error.message,
@@ -128,7 +128,7 @@ export const createWorkRecord = async (req: Request, res: Response) => {
 
     const workRecord = await workRecordModel.createWorkRecord(workRecordData, userId);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       data: workRecord,
       message: 'Work record created successfully',
@@ -143,7 +143,7 @@ export const createWorkRecord = async (req: Request, res: Response) => {
       error.message.includes('Work item is required')
     );
     const statusCode = isValidationError ? 400 : 500;
-    res.status(statusCode).json({
+    return res.status(statusCode).json({
       success: false,
       message: error.message || 'Failed to create work record',
       error: error.message,
@@ -209,7 +209,7 @@ export const updateWorkRecord = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: workRecord,
       message: 'Work record updated successfully',
@@ -224,7 +224,7 @@ export const updateWorkRecord = async (req: Request, res: Response) => {
       error.message.includes('Work item is required')
     );
     const statusCode = isValidationError ? 400 : 500;
-    res.status(statusCode).json({
+    return res.status(statusCode).json({
       success: false,
       message: error.message || 'Failed to update work record',
       error: error.message,
@@ -244,13 +244,13 @@ export const deleteWorkRecord = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Work record deleted successfully',
     });
   } catch (error: any) {
     console.error('Error deleting work record:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to delete work record',
       error: error.message,
@@ -286,13 +286,13 @@ export const getWorkRecordsByEmployeeAndMonth = async (req: Request, res: Respon
       monthNum
     );
 
-    res.json({
+    return res.json({
       success: true,
       data: workRecords,
     });
   } catch (error: any) {
     console.error('Error fetching work records by employee and month:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch work records',
       error: error.message,
@@ -309,7 +309,7 @@ export const getTotalQuantityMadeByWorkItem = async (req: Request, res: Response
       excludeRecordId as string | undefined
     );
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         workItemId: id,
@@ -318,7 +318,7 @@ export const getTotalQuantityMadeByWorkItem = async (req: Request, res: Response
     });
   } catch (error: any) {
     console.error('Error fetching total quantity made by work item:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch total quantity made',
       error: error.message,
@@ -336,7 +336,7 @@ export const getTotalHoursWorkedInDay = async (req: Request, res: Response) => {
       excludeRecordId as string | undefined
     );
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         employeeId,
@@ -346,7 +346,7 @@ export const getTotalHoursWorkedInDay = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error fetching total hours worked in day:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch total hours worked',
       error: error.message,

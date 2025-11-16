@@ -9,13 +9,13 @@ export const getAllWorkItems = async (req: Request, res: Response) => {
       difficulty_level as string | undefined
     );
 
-    res.json({
+    return res.json({
       success: true,
       data: workItems,
     });
   } catch (error: any) {
     console.error('Error fetching work items:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch work items',
       error: error.message,
@@ -35,13 +35,13 @@ export const getWorkItemById = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: workItem,
     });
   } catch (error: any) {
     console.error('Error fetching work item:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch work item',
       error: error.message,
@@ -84,14 +84,14 @@ export const createWorkItem = async (req: Request, res: Response) => {
 
     const workItem = await workItemModel.createWorkItem(workItemData);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       data: workItem,
       message: 'Work item created successfully',
     });
   } catch (error: any) {
     console.error('Error creating work item:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to create work item',
       error: error.message,
@@ -134,14 +134,14 @@ export const updateWorkItem = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: workItem,
       message: 'Work item updated successfully',
     });
   } catch (error: any) {
     console.error('Error updating work item:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to update work item',
       error: error.message,
@@ -161,13 +161,13 @@ export const deleteWorkItem = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Work item deleted successfully',
     });
   } catch (error: any) {
     console.error('Error deleting work item:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to delete work item',
       error: error.message,

@@ -105,13 +105,13 @@ export const getWeeklyReport = async (req: Request, res: Response) => {
       })),
     };
 
-    res.json({
+    return res.json({
       success: true,
       data: report,
     });
   } catch (error: any) {
     console.error('Error generating weekly report:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to generate weekly report',
       error: error.message,
@@ -220,13 +220,13 @@ export const getMonthlyReport = async (req: Request, res: Response) => {
       })),
     };
 
-    res.json({
+    return res.json({
       success: true,
       data: report,
     });
   } catch (error: any) {
     console.error('Error generating monthly report:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to generate monthly report',
       error: error.message,

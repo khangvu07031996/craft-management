@@ -9,13 +9,13 @@ import {
 export const getAllOvertimeConfigs = async (req: Request, res: Response) => {
   try {
     const configs = await overtimeConfigModel.getAllOvertimeConfigs();
-    res.json({
+    return res.json({
       success: true,
       data: configs,
     });
   } catch (error: any) {
     console.error('Error fetching overtime configs:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch overtime configs',
       error: error.message,
@@ -35,13 +35,13 @@ export const getOvertimeConfigByWorkTypeId = async (req: Request, res: Response)
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: config,
     });
   } catch (error: any) {
     console.error('Error fetching overtime config:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch overtime config',
       error: error.message,
@@ -102,14 +102,14 @@ export const createOvertimeConfig = async (req: Request, res: Response) => {
 
     const config = await overtimeConfigModel.createOvertimeConfig(data);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       data: config,
       message: 'Overtime config created successfully',
     });
   } catch (error: any) {
     console.error('Error creating overtime config:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to create overtime config',
       error: error.message,
@@ -187,14 +187,14 @@ export const updateOvertimeConfig = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: config,
       message: 'Overtime config updated successfully',
     });
   } catch (error: any) {
     console.error('Error updating overtime config:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to update overtime config',
       error: error.message,
@@ -214,13 +214,13 @@ export const deleteOvertimeConfig = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Overtime config deleted successfully',
     });
   } catch (error: any) {
     console.error('Error deleting overtime config:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to delete overtime config',
       error: error.message,

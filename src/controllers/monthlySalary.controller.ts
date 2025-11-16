@@ -18,7 +18,7 @@ export const getAllMonthlySalaries = async (req: Request, res: Response) => {
       parseInt(page_size as string)
     );
 
-    res.json({
+    return res.json({
       success: true,
       data: result.monthlySalaries,
       pagination: {
@@ -30,7 +30,7 @@ export const getAllMonthlySalaries = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error fetching monthly salaries:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch monthly salaries',
       error: error.message,
@@ -50,13 +50,13 @@ export const getMonthlySalaryById = async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: monthlySalary,
     });
   } catch (error: any) {
     console.error('Error fetching monthly salary:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch monthly salary',
       error: error.message,
@@ -84,14 +84,14 @@ export const calculateMonthlySalary = async (req: Request, res: Response) => {
 
     const monthlySalary = await monthlySalaryModel.calculateAndSaveMonthlySalary(data);
 
-    res.json({
+    return res.json({
       success: true,
       data: monthlySalary,
       message: 'Monthly salary calculated and saved successfully',
     });
   } catch (error: any) {
     console.error('Error calculating monthly salary:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to calculate monthly salary',
       error: error.message,
@@ -110,10 +110,10 @@ export const updateMonthlySalaryStatus = async (req: Request, res: Response) => 
     if (!updated) {
       return res.status(404).json({ success: false, message: 'Monthly salary not found' });
     }
-    res.json({ success: true, data: updated, message: 'Allowances updated' });
+    return res.json({ success: true, data: updated, message: 'Allowances updated' });
   } catch (error: any) {
     console.error('Error updating monthly salary allowances:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to update monthly salary',
       error: error.message,
@@ -128,10 +128,10 @@ export const payMonthlySalary = async (req: Request, res: Response) => {
     if (!paid) {
       return res.status(404).json({ success: false, message: 'Monthly salary not found' });
     }
-    res.json({ success: true, data: paid, message: 'Đã thanh toán bảng lương' });
+    return res.json({ success: true, data: paid, message: 'Đã thanh toán bảng lương' });
   } catch (error: any) {
     console.error('Error paying monthly salary:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to pay monthly salary',
       error: error.message,
@@ -153,10 +153,10 @@ export const deleteMonthlySalary = async (req: Request, res: Response) => {
       }
       throw err;
     }
-    res.json({ success: true, message: 'Đã xoá bảng lương' });
+    return res.json({ success: true, message: 'Đã xoá bảng lương' });
   } catch (error: any) {
     console.error('Error deleting monthly salary:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to delete monthly salary',
       error: error.message,
