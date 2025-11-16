@@ -4,9 +4,10 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Use DATABASE_URL if available, otherwise use individual env vars
+const useDatabseUrl = !!process.env.DATABASE_URL;
 const hasSslMode = process.env.DATABASE_URL?.includes('sslmode=require');
 
-const poolConfig = process.env.DATABASE_URL
+const poolConfig: any = process.env.DATABASE_URL
   ? {
       connectionString: process.env.DATABASE_URL,
     }
@@ -18,10 +19,13 @@ const poolConfig = process.env.DATABASE_URL
       password: process.env.DB_PASSWORD || 'postgres',
     };
 
+// Enable SSL for DigitalOcean Managed PostgreSQL (always when using DATABASE_URL)
+if (useDatabseUrl || hasSslMode) {
+  poolConfig.ssl = { rejectUnauthorized: false };
+}
+
 const pool = new Pool({
   ...poolConfig,
-  // Enable SSL with rejectUnauthorized: false for DigitalOcean Managed PostgreSQL
-  ssl: hasSslMode ? { rejectUnauthorized: false } : undefined,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
