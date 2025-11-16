@@ -102,37 +102,63 @@ export const calculateMonthlySalary = async (req: Request, res: Response) => {
 export const updateMonthlySalaryStatus = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
-
-    if (!status || !['draft', 'confirmed', 'paid'].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Valid status (draft, confirmed, paid) is required',
-      });
+    const { allowances } = req.body;
+    if (allowances === undefined || allowances === null || Number(allowances) < 0) {
+      return res.status(400).json({ success: false, message: 'allowances must be >= 0' });
     }
-
-    const monthlySalary = await monthlySalaryModel.updateMonthlySalaryStatus(
-      id,
-      status as 'draft' | 'confirmed' | 'paid'
-    );
-
-    if (!monthlySalary) {
-      return res.status(404).json({
-        success: false,
-        message: 'Monthly salary not found',
-      });
+    const updated = await monthlySalaryModel.updateAllowances(id, Number(allowances));
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Monthly salary not found' });
     }
-
-    res.json({
-      success: true,
-      data: monthlySalary,
-      message: 'Monthly salary status updated successfully',
-    });
+    res.json({ success: true, data: updated, message: 'Allowances updated' });
   } catch (error: any) {
-    console.error('Error updating monthly salary status:', error);
+    console.error('Error updating monthly salary allowances:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update monthly salary status',
+      message: 'Failed to update monthly salary',
+      error: error.message,
+    });
+  }
+};
+
+export const payMonthlySalary = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const paid = await monthlySalaryModel.payMonthlySalary(id);
+    if (!paid) {
+      return res.status(404).json({ success: false, message: 'Monthly salary not found' });
+    }
+    res.json({ success: true, data: paid, message: 'Đã thanh toán bảng lương' });
+  } catch (error: any) {
+    console.error('Error paying monthly salary:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to pay monthly salary',
+      error: error.message,
+    });
+  }
+};
+
+export const deleteMonthlySalary = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    try {
+      const ok = await monthlySalaryModel.deleteMonthlySalary(id);
+      if (!ok) {
+        return res.status(404).json({ success: false, message: 'Monthly salary not found' });
+      }
+    } catch (err: any) {
+      if (err.code === 'PAID_DELETE_FORBIDDEN') {
+        return res.status(409).json({ success: false, message: err.message });
+      }
+      throw err;
+    }
+    res.json({ success: true, message: 'Đã xoá bảng lương' });
+  } catch (error: any) {
+    console.error('Error deleting monthly salary:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete monthly salary',
       error: error.message,
     });
   }

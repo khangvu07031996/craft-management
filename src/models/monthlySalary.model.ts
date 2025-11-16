@@ -17,7 +17,9 @@ class MonthlySalaryModel {
       month: row.month,
       totalWorkDays: row.total_work_days,
       totalAmount: parseFloat(row.total_amount),
-      status: row.status,
+      allowances: row.allowances !== undefined && row.allowances !== null ? parseFloat(row.allowances) : 0,
+      status: (row.status || 'Tạm tính') as 'Tạm tính' | 'Thanh toán',
+      paidAt: row.paid_at ? new Date(row.paid_at).toISOString() : null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -153,10 +155,14 @@ class MonthlySalaryModel {
     const existing = await this.getMonthlySalaryByEmployeeAndMonth(employeeId, year, month);
 
     if (existing) {
+      // Only allow recalc when status is 'Tạm tính'
+      if (existing.status === 'Thanh toán') {
+        throw new Error('Không thể tính lại lương đã thanh toán');
+      }
       // Update existing
       const result = await pool.query(
         `UPDATE monthly_salaries 
-         SET total_work_days = $1, total_amount = $2, status = 'draft'
+         SET total_work_days = $1, total_amount = $2, status = 'Tạm tính'
          WHERE id = $3
          RETURNING *`,
         [totalWorkDays, totalAmount, existing.id]
@@ -167,7 +173,7 @@ class MonthlySalaryModel {
       const result = await pool.query(
         `INSERT INTO monthly_salaries (
           employee_id, year, month, total_work_days, total_amount, status
-        ) VALUES ($1, $2, $3, $4, $5, 'draft')
+        ) VALUES ($1, $2, $3, $4, $5, 'Tạm tính')
         RETURNING *`,
         [employeeId, year, month, totalWorkDays, totalAmount]
       );
@@ -175,23 +181,42 @@ class MonthlySalaryModel {
     }
   }
 
-  async updateMonthlySalaryStatus(
-    id: string,
-    status: 'draft' | 'confirmed' | 'paid'
-  ): Promise<MonthlySalaryResponse | null> {
+  async updateAllowances(id: string, allowances: number): Promise<MonthlySalaryResponse | null> {
     const result = await pool.query(
-      `UPDATE monthly_salaries 
-       SET status = $1
+      `UPDATE monthly_salaries
+       SET allowances = $1
        WHERE id = $2
        RETURNING *`,
-      [status, id]
+      [allowances, id]
     );
-
-    if (result.rows.length === 0) {
-      return null;
-    }
-
+    if (result.rows.length === 0) return null;
     return this.getMonthlySalaryById(id);
+  }
+
+  async payMonthlySalary(id: string): Promise<MonthlySalaryResponse | null> {
+    // Set status to 'Thanh toán' and paid_at
+    const result = await pool.query(
+      `UPDATE monthly_salaries
+       SET status = 'Thanh toán', paid_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+    if (result.rows.length === 0) return null;
+    return this.getMonthlySalaryById(id);
+  }
+
+  async deleteMonthlySalary(id: string): Promise<boolean> {
+    // Check status first
+    const ms = await this.getMonthlySalaryById(id);
+    if (!ms) return false;
+    if (ms.status === 'Thanh toán') {
+      const err: any = new Error('Không thể xoá bảng lương đã thanh toán');
+      err.code = 'PAID_DELETE_FORBIDDEN';
+      throw err;
+    }
+    await pool.query(`DELETE FROM monthly_salaries WHERE id = $1`, [id]);
+    return true;
   }
 }
 

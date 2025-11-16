@@ -123,7 +123,9 @@ export interface MonthlySalaryResponse {
   month: number;
   totalWorkDays: number;
   totalAmount: number;
-  status: 'draft' | 'confirmed' | 'paid';
+  allowances?: number;
+  status: 'Tạm tính' | 'Thanh toán';
+  paidAt?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

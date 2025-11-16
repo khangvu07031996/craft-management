@@ -42,7 +42,11 @@ router.delete('/records/:id', workRecordController.deleteWorkRecord);
 router.get('/monthly-salaries', monthlySalaryController.getAllMonthlySalaries);
 router.get('/monthly-salaries/:id', monthlySalaryController.getMonthlySalaryById);
 router.post('/calculate-monthly', monthlySalaryController.calculateMonthlySalary);
-router.put('/monthly-salaries/:id/status', monthlySalaryController.updateMonthlySalaryStatus);
+// Update allowances
+router.put('/monthly-salaries/:id/allowances', monthlySalaryController.updateMonthlySalaryStatus);
+// Pay and Delete
+router.post('/monthly-salaries/:id/pay', monthlySalaryController.payMonthlySalary);
+router.delete('/monthly-salaries/:id', monthlySalaryController.deleteMonthlySalary);
 
 // Reports routes
 router.get('/reports/weekly', workReportController.getWeeklyReport);
