@@ -3,25 +3,28 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Use DATABASE_URL if available, otherwise use individual env vars
-const useDatabseUrl = !!process.env.DATABASE_URL;
-const hasSslMode = process.env.DATABASE_URL?.includes('sslmode=require');
+// Parse DATABASE_URL if available, otherwise use individual env vars
+let poolConfig: any;
 
-const poolConfig: any = process.env.DATABASE_URL
-  ? {
-      connectionString: process.env.DATABASE_URL,
-    }
-  : {
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432'),
-      database: process.env.DB_NAME || 'craft_management',
-      user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'postgres',
-    };
-
-// Enable SSL for DigitalOcean Managed PostgreSQL (always when using DATABASE_URL)
-if (useDatabseUrl || hasSslMode) {
-  poolConfig.ssl = { rejectUnauthorized: false };
+if (process.env.DATABASE_URL) {
+  const url = new URL(process.env.DATABASE_URL);
+  poolConfig = {
+    host: url.hostname,
+    port: parseInt(url.port || '5432'),
+    database: url.pathname.slice(1), // Remove leading '/'
+    user: url.username,
+    password: url.password,
+    // Enable SSL for DigitalOcean Managed PostgreSQL
+    ssl: { rejectUnauthorized: false },
+  };
+} else {
+  poolConfig = {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432'),
+    database: process.env.DB_NAME || 'craft_management',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres',
+  };
 }
 
 const pool = new Pool({
