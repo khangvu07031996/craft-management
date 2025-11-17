@@ -1,6 +1,7 @@
 import pool from '../config/database';
 import { MonthlySalaryResponse, CalculateMonthlySalaryDto } from '../types/work.types';
 import workRecordModel from './workRecord.model';
+import employeeModel from './employee.model';
 
 class MonthlySalaryModel {
   private mapToMonthlySalaryResponse(row: any): MonthlySalaryResponse {
@@ -146,10 +147,28 @@ class MonthlySalaryModel {
       month
     );
 
-    // Calculate total amount and work days
-    const totalAmount = workRecords.reduce((sum, record) => sum + record.totalAmount, 0);
-    const uniqueWorkDays = new Set(workRecords.map((record) => record.workDate)).size;
-    const totalWorkDays = uniqueWorkDays;
+    let totalAmount: number;
+    let totalWorkDays: number;
+
+    // If no work records, use default salary from employees table
+    if (workRecords.length === 0) {
+      // Get employee to check default salary
+      const employee = await employeeModel.getEmployeeById(employeeId);
+      if (!employee) {
+        throw new Error('Không tìm thấy nhân viên');
+      }
+      if (!employee.salary || employee.salary === 0) {
+        throw new Error(`Không có dữ liệu lương cho nhân viên ${employee.firstName} ${employee.lastName}`);
+      }
+      // Use default salary
+      totalAmount = employee.salary;
+      totalWorkDays = 0;
+    } else {
+      // Calculate total amount and work days from work records
+      totalAmount = workRecords.reduce((sum, record) => sum + record.totalAmount, 0);
+      const uniqueWorkDays = new Set(workRecords.map((record) => record.workDate)).size;
+      totalWorkDays = uniqueWorkDays;
+    }
 
     // Check if monthly salary already exists
     const existing = await this.getMonthlySalaryByEmployeeAndMonth(employeeId, year, month);
