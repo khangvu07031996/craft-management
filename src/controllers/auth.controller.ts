@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import userModel from '../models/user.model';
 import { RegisterDto, LoginDto, UserRole } from '../types/user.types';
 import { generateToken } from '../utils/jwt';
+import { sanitizeError } from '../utils/sanitize';
 
 class AuthController {
   // POST /api/auth/register - Register new user
@@ -68,7 +69,9 @@ class AuthController {
         },
       });
     } catch (error) {
-      console.error('Register error:', error);
+      // Sanitize error to prevent exposing sensitive data
+      const sanitizedError = sanitizeError(error);
+      console.error('Register error:', sanitizedError);
       res.status(500).json({
         success: false,
         message: 'Server error during registration',
@@ -130,7 +133,9 @@ class AuthController {
         },
       });
     } catch (error) {
-      console.error('Login error:', error);
+      // Sanitize error to prevent exposing sensitive data (like password)
+      const sanitizedError = sanitizeError(error);
+      console.error('Login error:', sanitizedError);
       res.status(500).json({
         success: false,
         message: 'Server error during login',
