@@ -4,6 +4,45 @@ import workRecordModel from './workRecord.model';
 import employeeModel from './employee.model';
 
 class MonthlySalaryModel {
+  /**
+   * Format PostgreSQL timestamp to UTC ISO string
+   * PostgreSQL returns timestamp without timezone, we need to treat it as UTC
+   * When pg returns a Date object, it's parsed as local time, but database stores UTC
+   * So we need to get LOCAL components and treat them as UTC
+   */
+  private formatTimestampToUTC(timestamp: any): string {
+    if (!timestamp) return null as any;
+    
+    // If it's already a Date object from pg, it was parsed as local time
+    // But the database stores UTC, so we need to get LOCAL components and treat them as UTC
+    if (timestamp instanceof Date) {
+      // Get LOCAL components (because pg parsed UTC timestamp as local time)
+      // These local components actually represent the UTC time stored in database
+      const year = timestamp.getFullYear();
+      const month = timestamp.getMonth();
+      const day = timestamp.getDate();
+      const hours = timestamp.getHours();
+      const minutes = timestamp.getMinutes();
+      const seconds = timestamp.getSeconds();
+      const ms = timestamp.getMilliseconds();
+      
+      // Create a new Date object treating these LOCAL components as UTC
+      const utcDate = new Date(Date.UTC(year, month, day, hours, minutes, seconds, ms));
+      return utcDate.toISOString();
+    }
+    
+    // If it's a string, handle it
+    const timestampStr = timestamp.toString();
+    // If already has timezone (Z, +, -), parse as is
+    if (timestampStr.includes('Z') || timestampStr.includes('+') || timestampStr.match(/-\d{2}:\d{2}$/)) {
+      return new Date(timestampStr).toISOString();
+    }
+    // PostgreSQL timestamp without timezone - treat as UTC by adding 'Z'
+    // Format: "2025-11-17 17:51:57.524249" -> "2025-11-17T17:51:57.524249Z"
+    const isoString = timestampStr.replace(' ', 'T') + 'Z';
+    return new Date(isoString).toISOString();
+  }
+
   private mapToMonthlySalaryResponse(row: any): MonthlySalaryResponse {
     return {
       id: row.id,
@@ -20,7 +59,8 @@ class MonthlySalaryModel {
       totalAmount: parseFloat(row.total_amount),
       allowances: row.allowances !== undefined && row.allowances !== null ? parseFloat(row.allowances) : 0,
       status: (row.status || 'Tạm tính') as 'Tạm tính' | 'Thanh toán',
-      paidAt: row.paid_at ? new Date(row.paid_at).toISOString() : null,
+      paidAt: row.paid_at ? this.formatTimestampToUTC(row.paid_at) : null,
+      calculatedAt: row.calculated_at ? this.formatTimestampToUTC(row.calculated_at) : null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -164,10 +204,20 @@ class MonthlySalaryModel {
       totalAmount = employee.salary;
       totalWorkDays = 0;
     } else {
-      // Calculate total amount and work days from work records
+      // Calculate total amount from work records
       totalAmount = workRecords.reduce((sum, record) => sum + record.totalAmount, 0);
-      const uniqueWorkDays = new Set(workRecords.map((record) => record.workDate)).size;
-      totalWorkDays = uniqueWorkDays;
+      
+      // Calculate unique work days directly from database using SQL
+      // This ensures accurate counting of distinct work dates
+      const uniqueDaysQuery = await pool.query(
+        `SELECT COUNT(DISTINCT work_date) as unique_days
+         FROM work_records
+         WHERE employee_id = $1
+           AND EXTRACT(YEAR FROM work_date) = $2
+           AND EXTRACT(MONTH FROM work_date) = $3`,
+        [employeeId, year, month]
+      );
+      totalWorkDays = parseInt(uniqueDaysQuery.rows[0].unique_days) || 0;
     }
 
     // Check if monthly salary already exists
@@ -178,21 +228,21 @@ class MonthlySalaryModel {
       if (existing.status === 'Thanh toán') {
         throw new Error('Không thể tính lại lương đã thanh toán');
       }
-      // Update existing
+      // Update existing - set calculated_at to current timestamp
       const result = await pool.query(
         `UPDATE monthly_salaries 
-         SET total_work_days = $1, total_amount = $2, status = 'Tạm tính'
+         SET total_work_days = $1, total_amount = $2, status = 'Tạm tính', calculated_at = NOW()
          WHERE id = $3
          RETURNING *`,
         [totalWorkDays, totalAmount, existing.id]
       );
       return this.getMonthlySalaryById(result.rows[0].id) as Promise<MonthlySalaryResponse>;
     } else {
-      // Create new
+      // Create new - set calculated_at to current timestamp
       const result = await pool.query(
         `INSERT INTO monthly_salaries (
-          employee_id, year, month, total_work_days, total_amount, status
-        ) VALUES ($1, $2, $3, $4, $5, 'Tạm tính')
+          employee_id, year, month, total_work_days, total_amount, status, calculated_at
+        ) VALUES ($1, $2, $3, $4, $5, 'Tạm tính', NOW())
         RETURNING *`,
         [employeeId, year, month, totalWorkDays, totalAmount]
       );

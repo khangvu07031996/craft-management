@@ -126,6 +126,7 @@ export interface MonthlySalaryResponse {
   allowances?: number;
   status: 'Tạm tính' | 'Thanh toán';
   paidAt?: string | null;
+  calculatedAt?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
