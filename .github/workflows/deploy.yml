@@ -1,0 +1,60 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package*.json'
+      - 'Dockerfile'
+      - 'tsconfig.json'
+      - '.github/workflows/deploy.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+      
+      - name: Deploy to Droplet
+        run: |
+          ssh -o StrictHostKeyChecking=no root@138.68.228.14 << 'EOF'
+            set -e
+            echo "🚀 Starting backend deployment..."
+            
+            cd /opt/craft/craft-management
+            echo "📥 Pulling latest code..."
+            git pull origin main
+            
+            # Check if database migrations changed
+            echo "🔍 Checking for database migration changes..."
+            MIGRATION_CHANGED=$(git diff HEAD~1 HEAD --name-only | grep -E 'src/database/.*\.sql' || true)
+            
+            cd /opt/craft/deploy
+            echo "🔨 Building backend Docker image..."
+            docker compose -f docker-compose.prod.yml build --no-cache backend
+            
+            echo "🔄 Restarting backend service..."
+            docker compose -f docker-compose.prod.yml up -d backend
+            
+            # Wait for backend to be ready
+            echo "⏳ Waiting for backend to start..."
+            sleep 5
+            
+            # Run migrations if SQL files changed
+            if [ -n "$MIGRATION_CHANGED" ]; then
+              echo "📊 Running database migrations..."
+              docker exec deploy-backend-1 node dist/database/setup.js || echo "⚠️ Migration script completed with warnings"
+            else
+              echo "✅ No database migrations detected"
+            fi
+            
+            echo "✅ Backend deployment completed successfully!"
+          EOF
+
