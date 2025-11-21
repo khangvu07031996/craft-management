@@ -72,6 +72,21 @@ export async function setupDatabase(): Promise<void> {
         console.warn('⚠️ Overtime work_records migration warning:', error.message);
       }
     }
+
+    // Add weight_kg column to work_items table
+    try {
+      const weightMigration = fs.readFileSync(
+        path.join(__dirname, 'add_weight_to_work_items.sql'),
+        'utf-8'
+      );
+      await pool.query(weightMigration);
+      console.log('✅ Weight column migration for work_items completed');
+    } catch (error: any) {
+      // Migration might already be applied, that's okay
+      if (!error.message.includes('already exists') && !error.message.includes('duplicate') && !error.message.includes('column')) {
+        console.warn('⚠️ Weight migration warning:', error.message);
+      }
+    }
     
     console.log('✅ Database setup completed successfully');
   } catch (error) {

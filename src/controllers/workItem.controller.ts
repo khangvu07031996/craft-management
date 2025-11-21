@@ -82,6 +82,13 @@ export const createWorkItem = async (req: Request, res: Response) => {
       });
     }
 
+    if (workItemData.weight !== undefined && workItemData.weight < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Weight must be non-negative',
+      });
+    }
+
     const workItem = await workItemModel.createWorkItem(workItemData);
 
     return res.status(201).json({
@@ -122,6 +129,13 @@ export const updateWorkItem = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: 'Welds per item must be non-negative',
+      });
+    }
+
+    if (workItemData.weight !== undefined && workItemData.weight < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Weight must be non-negative',
       });
     }
 

@@ -32,6 +32,7 @@ class WorkItemModel {
       weldsPerItem: parseInt(row.welds_per_item || 0),
       status: (row.status || 'Tạo mới') as 'Tạo mới' | 'Đang sản xuất' | 'Hoàn thành',
       estimatedDeliveryDate: row.estimated_delivery_date_str || formatDate(row.estimated_delivery_date),
+      weight: row.weight_kg !== null && row.weight_kg !== undefined ? parseFloat(row.weight_kg) : undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -91,13 +92,13 @@ class WorkItemModel {
   }
 
   async createWorkItem(workItemData: CreateWorkItemDto): Promise<WorkItemResponse> {
-    const { name, difficultyLevel, pricePerWeld, totalQuantity, weldsPerItem, estimatedDeliveryDate } = workItemData;
+    const { name, difficultyLevel, pricePerWeld, totalQuantity, weldsPerItem, estimatedDeliveryDate, weight } = workItemData;
 
     const result = await pool.query(
-      `INSERT INTO work_items (name, difficulty_level, price_per_weld, total_quantity, welds_per_item, status, estimated_delivery_date)
-       VALUES ($1, $2, $3, $4, $5, 'Tạo mới', $6)
+      `INSERT INTO work_items (name, difficulty_level, price_per_weld, total_quantity, welds_per_item, status, estimated_delivery_date, weight_kg)
+       VALUES ($1, $2, $3, $4, $5, 'Tạo mới', $6, $7)
        RETURNING *, TO_CHAR(estimated_delivery_date, 'YYYY-MM-DD') as estimated_delivery_date_str`,
-      [name, difficultyLevel, pricePerWeld, totalQuantity, weldsPerItem, estimatedDeliveryDate || null]
+      [name, difficultyLevel, pricePerWeld, totalQuantity, weldsPerItem, estimatedDeliveryDate || null, weight !== undefined ? weight : null]
     );
 
     const workItem = this.mapToWorkItemResponse(result.rows[0]);
@@ -149,6 +150,12 @@ class WorkItemModel {
     if (workItemData.estimatedDeliveryDate !== undefined) {
       updates.push(`estimated_delivery_date = $${paramCount}`);
       values.push(workItemData.estimatedDeliveryDate || null);
+      paramCount++;
+    }
+
+    if (workItemData.weight !== undefined) {
+      updates.push(`weight_kg = $${paramCount}`);
+      values.push(workItemData.weight !== null && workItemData.weight !== undefined ? workItemData.weight : null);
       paramCount++;
     }
 
