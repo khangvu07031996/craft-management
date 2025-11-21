@@ -33,6 +33,7 @@ router.get('/items/:id/total-made', workRecordController.getTotalQuantityMadeByW
 router.get('/records/hours/:employeeId/:workDate', workRecordController.getTotalHoursWorkedInDay);
 router.get('/records', workRecordController.getAllWorkRecords);
 router.get('/records/by-employee-month', workRecordController.getWorkRecordsByEmployeeAndMonth);
+router.get('/records/by-monthly-salary/:monthly_salary_id', workRecordController.getWorkRecordsByMonthlySalaryId);
 router.get('/records/:id', workRecordController.getWorkRecordById);
 router.post('/records', workRecordController.createWorkRecord);
 router.put('/records/:id', workRecordController.updateWorkRecord);

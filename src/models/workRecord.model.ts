@@ -35,6 +35,7 @@ class WorkRecordModel {
       overtimeQuantity: row.overtime_quantity ? parseFloat(row.overtime_quantity) : undefined,
       overtimeHours: row.overtime_hours ? parseFloat(row.overtime_hours) : undefined,
       notes: row.notes || undefined,
+      status: row.status || 'Tạo mới',
       createdBy: row.created_by,
       createdByUser: row.created_by_first_name ? {
         id: row.created_by,
@@ -52,6 +53,7 @@ class WorkRecordModel {
       dateFrom?: string;
       dateTo?: string;
       workTypeId?: string;
+      status?: string;
     },
     page: number = 1,
     pageSize: number = 10
@@ -110,6 +112,12 @@ class WorkRecordModel {
     if (filters.workTypeId) {
       conditions.push(`wr.work_type_id = $${paramCount}`);
       values.push(filters.workTypeId);
+      paramCount++;
+    }
+
+    if (filters.status) {
+      conditions.push(`wr.status = $${paramCount}`);
+      values.push(filters.status);
       paramCount++;
     }
 
@@ -196,7 +204,7 @@ class WorkRecordModel {
   }
 
   async createWorkRecord(workRecordData: CreateWorkRecordDto, createdBy: string): Promise<WorkRecordResponse> {
-    const { employeeId, workDate, workTypeId, workItemId, quantity, unitPrice, notes, isOvertime, overtimeQuantity, overtimeHours } = workRecordData;
+    const { employeeId, workDate, workTypeId, workItemId, quantity, unitPrice, notes, isOvertime, overtimeQuantity, overtimeHours, status } = workRecordData;
 
     // Get work type to determine calculation
     const workType = await workTypeModel.getWorkTypeById(workTypeId);
@@ -252,8 +260,8 @@ class WorkRecordModel {
         `INSERT INTO work_records (
           employee_id, work_date, work_type_id, work_item_id,
           quantity, unit_price, total_amount, notes, created_by,
-          is_overtime, overtime_quantity, overtime_hours
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          is_overtime, overtime_quantity, overtime_hours, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13, 'Tạo mới'))
         RETURNING *`,
         [
           employeeId,
@@ -268,6 +276,7 @@ class WorkRecordModel {
           isOvertime || false,
           overtimeQuantity || null,
           null, // overtime_hours is null for weld_count
+          status || 'Tạo mới',
         ]
       );
 
@@ -317,8 +326,8 @@ class WorkRecordModel {
         `INSERT INTO work_records (
           employee_id, work_date, work_type_id, work_item_id,
           quantity, unit_price, total_amount, notes, created_by,
-          is_overtime, overtime_quantity, overtime_hours
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          is_overtime, overtime_quantity, overtime_hours, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13, 'Tạo mới'))
         RETURNING *`,
         [
           employeeId,
@@ -333,6 +342,7 @@ class WorkRecordModel {
           isOvertime || false,
           null, // overtime_quantity is null for hourly/daily
           overtimeHours || null,
+          status || 'Tạo mới',
         ]
       );
 
@@ -573,11 +583,69 @@ class WorkRecordModel {
       WHERE wr.employee_id = $1 
         AND EXTRACT(YEAR FROM wr.work_date) = $2
         AND EXTRACT(MONTH FROM wr.work_date) = $3
+        AND wr.status = 'Tạo mới'
       ORDER BY wr.work_date DESC
     `;
 
     const result = await pool.query(query, [employeeId, year, month]);
     return result.rows.map((row) => this.mapToWorkRecordResponse(row));
+  }
+
+  async getWorkRecordsByEmployeeWithStatus(
+    employeeId: string,
+    status: 'Tạo mới' | 'Đã thanh toán' = 'Tạo mới'
+  ): Promise<WorkRecordResponse[]> {
+    const query = `
+      SELECT 
+        wr.*,
+        e.first_name as employee_first_name,
+        e.last_name as employee_last_name,
+        e.employee_id as employee_employee_id,
+        wt.name as work_type_name,
+        wt.calculation_type as work_type_calculation_type,
+        wi.name as work_item_name,
+        wi.difficulty_level as work_item_difficulty_level,
+        u.first_name as created_by_first_name,
+        u.last_name as created_by_last_name
+      FROM work_records wr
+      LEFT JOIN employees e ON wr.employee_id = e.id
+      LEFT JOIN work_types wt ON wr.work_type_id = wt.id
+      LEFT JOIN work_items wi ON wr.work_item_id = wi.id
+      LEFT JOIN users u ON wr.created_by = u.id
+      WHERE wr.employee_id = $1 
+        AND wr.status = $2
+      ORDER BY wr.work_date DESC
+    `;
+
+    const result = await pool.query(query, [employeeId, status]);
+    return result.rows.map((row) => this.mapToWorkRecordResponse(row));
+  }
+
+  async getWorkRecordDateRange(
+    recordIds: string[]
+  ): Promise<{ minDate: Date; maxDate: Date } | null> {
+    if (recordIds.length === 0) {
+      return null;
+    }
+
+    const query = `
+      SELECT 
+        MIN(work_date) as min_date,
+        MAX(work_date) as max_date
+      FROM work_records
+      WHERE id = ANY($1::uuid[])
+    `;
+
+    const result = await pool.query(query, [recordIds]);
+    
+    if (result.rows.length === 0 || !result.rows[0].min_date || !result.rows[0].max_date) {
+      return null;
+    }
+
+    return {
+      minDate: new Date(result.rows[0].min_date),
+      maxDate: new Date(result.rows[0].max_date),
+    };
   }
 
   async getTotalQuantityMadeByWorkItem(workItemId: string, excludeRecordId?: string): Promise<number> {
@@ -615,6 +683,81 @@ class WorkRecordModel {
 
     const result = await pool.query(query, values);
     return parseFloat(result.rows[0].total) || 0;
+  }
+
+  async updateWorkRecordsStatus(
+    recordIds: string[],
+    status: 'Tạo mới' | 'Đã thanh toán'
+  ): Promise<void> {
+    if (recordIds.length === 0) {
+      return;
+    }
+
+    await pool.query(
+      `UPDATE work_records
+       SET status = $1, updated_at = NOW()
+       WHERE id = ANY($2::uuid[])`,
+      [status, recordIds]
+    );
+  }
+
+  async getWorkRecordIdsByEmployeeAndMonths(
+    employeeId: string,
+    yearMonthPairs: Array<{ year: number; month: number }>
+  ): Promise<string[]> {
+    if (yearMonthPairs.length === 0) {
+      return [];
+    }
+
+    const conditions: string[] = [];
+    const values: any[] = [employeeId];
+    let paramCount = 2;
+
+    yearMonthPairs.forEach(({ year, month }) => {
+      conditions.push(
+        `(EXTRACT(YEAR FROM work_date) = $${paramCount} AND EXTRACT(MONTH FROM work_date) = $${paramCount + 1})`
+      );
+      values.push(year, month);
+      paramCount += 2;
+    });
+
+    const query = `
+      SELECT id
+      FROM work_records
+      WHERE employee_id = $1
+        AND status = 'Tạo mới'
+        AND (${conditions.join(' OR ')})
+    `;
+
+    const result = await pool.query(query, values);
+    return result.rows.map((row) => row.id);
+  }
+
+  async getWorkRecordsByMonthlySalaryId(monthlySalaryId: string): Promise<WorkRecordResponse[]> {
+    const query = `
+      SELECT 
+        wr.*,
+        e.first_name as employee_first_name,
+        e.last_name as employee_last_name,
+        e.employee_id as employee_employee_id,
+        wt.name as work_type_name,
+        wt.calculation_type as work_type_calculation_type,
+        wi.name as work_item_name,
+        wi.difficulty_level as work_item_difficulty_level,
+        u.first_name as created_by_first_name,
+        u.last_name as created_by_last_name
+      FROM work_records wr
+      INNER JOIN monthly_salary_work_records mswr ON wr.id = mswr.work_record_id
+      LEFT JOIN employees e ON wr.employee_id = e.id
+      LEFT JOIN work_types wt ON wr.work_type_id = wt.id
+      LEFT JOIN work_items wi ON wr.work_item_id = wi.id
+      LEFT JOIN users u ON wr.created_by = u.id
+      WHERE mswr.monthly_salary_id = $1
+      ORDER BY wr.work_date DESC
+    `;
+
+    const result = await pool.query(query, [monthlySalaryId]);
+    return result.rows.map((row) => this.mapToWorkRecordResponse(row));
   }
 }
 

@@ -87,6 +87,51 @@ export async function setupDatabase(): Promise<void> {
         console.warn('⚠️ Weight migration warning:', error.message);
       }
     }
+
+    // Add status column to work_records table
+    try {
+      const statusWorkRecordsMigration = fs.readFileSync(
+        path.join(__dirname, 'add_status_to_work_records.sql'),
+        'utf-8'
+      );
+      await pool.query(statusWorkRecordsMigration);
+      console.log('✅ Status column migration for work_records completed');
+    } catch (error: any) {
+      // Migration might already be applied, that's okay
+      if (!error.message.includes('already exists') && !error.message.includes('duplicate') && !error.message.includes('column')) {
+        console.warn('⚠️ Status work_records migration warning:', error.message);
+      }
+    }
+
+    // Remove UNIQUE constraint on monthly_salaries
+    try {
+      const removeUniqueConstraintMigration = fs.readFileSync(
+        path.join(__dirname, 'remove_monthly_salary_unique_constraint.sql'),
+        'utf-8'
+      );
+      await pool.query(removeUniqueConstraintMigration);
+      console.log('✅ Remove UNIQUE constraint migration for monthly_salaries completed');
+    } catch (error: any) {
+      // Migration might already be applied, that's okay
+      if (!error.message.includes('does not exist') && !error.message.includes('constraint')) {
+        console.warn('⚠️ Remove UNIQUE constraint migration warning:', error.message);
+      }
+    }
+
+    // Create monthly_salary_work_records junction table
+    try {
+      const monthlySalaryWorkRecordsMigration = fs.readFileSync(
+        path.join(__dirname, 'create_monthly_salary_work_records_table.sql'),
+        'utf-8'
+      );
+      await pool.query(monthlySalaryWorkRecordsMigration);
+      console.log('✅ Monthly salary work records junction table migration completed');
+    } catch (error: any) {
+      // Migration might already be applied, that's okay
+      if (!error.message.includes('already exists') && !error.message.includes('duplicate')) {
+        console.warn('⚠️ Monthly salary work records migration warning:', error.message);
+      }
+    }
     
     console.log('✅ Database setup completed successfully');
   } catch (error) {

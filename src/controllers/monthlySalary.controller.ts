@@ -70,14 +70,15 @@ export const calculateMonthlySalary = async (req: Request, res: Response) => {
   try {
     const data: CalculateMonthlySalaryDto = req.body;
 
-    if (!data.employeeId || !data.year || !data.month) {
+    if (!data.employeeId) {
       return res.status(400).json({
         success: false,
-        message: 'Employee ID, year, and month are required',
+        message: 'Employee ID is required',
       });
     }
 
-    if (data.month < 1 || data.month > 12) {
+    // Year and month are optional - will be auto-detected from work records
+    if (data.month !== undefined && (data.month < 1 || data.month > 12)) {
       return res.status(400).json({
         success: false,
         message: 'Month must be between 1 and 12',
@@ -95,7 +96,9 @@ export const calculateMonthlySalary = async (req: Request, res: Response) => {
     console.error('Error calculating monthly salary:', error);
     // If error message contains specific error about no salary data, return 400 instead of 500
     const errorMessage = error.message || 'Failed to calculate monthly salary';
-    const statusCode = errorMessage.includes('Không có dữ liệu lương') || errorMessage.includes('Không tìm thấy nhân viên') ? 400 : 500;
+    const statusCode = errorMessage.includes('Không có dữ liệu lương') || 
+                       errorMessage.includes('Không tìm thấy nhân viên') || 
+                       errorMessage.includes('không có bản ghi công việc') ? 400 : 500;
     return res.status(statusCode).json({
       success: false,
       message: errorMessage,

@@ -5,13 +5,14 @@ import { CreateWorkRecordDto, UpdateWorkRecordDto } from '../types/work.types';
 
 export const getAllWorkRecords = async (req: Request, res: Response) => {
   try {
-    const { employee_id, date_from, date_to, work_type_id, page = '1', page_size = '10' } = req.query;
+    const { employee_id, date_from, date_to, work_type_id, status, page = '1', page_size = '10' } = req.query;
 
     const filters = {
       employeeId: employee_id as string | undefined,
       dateFrom: date_from as string | undefined,
       dateTo: date_to as string | undefined,
       workTypeId: work_type_id as string | undefined,
+      status: status as string | undefined,
     };
 
     // Debug logging
@@ -292,6 +293,33 @@ export const getWorkRecordsByEmployeeAndMonth = async (req: Request, res: Respon
     });
   } catch (error: any) {
     console.error('Error fetching work records by employee and month:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch work records',
+      error: error.message,
+    });
+  }
+};
+
+export const getWorkRecordsByMonthlySalaryId = async (req: Request, res: Response) => {
+  try {
+    const { monthly_salary_id } = req.params;
+
+    if (!monthly_salary_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Monthly salary ID is required',
+      });
+    }
+
+    const workRecords = await workRecordModel.getWorkRecordsByMonthlySalaryId(monthly_salary_id);
+
+    return res.json({
+      success: true,
+      data: workRecords,
+    });
+  } catch (error: any) {
+    console.error('Error fetching work records by monthly salary ID:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch work records',

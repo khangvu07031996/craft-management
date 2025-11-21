@@ -180,74 +180,120 @@ class MonthlySalaryModel {
   async calculateAndSaveMonthlySalary(data: CalculateMonthlySalaryDto): Promise<MonthlySalaryResponse> {
     const { employeeId, year, month } = data;
 
-    // Get all work records for the month
-    const workRecords = await workRecordModel.getWorkRecordsByEmployeeAndMonth(
-      employeeId,
-      year,
-      month
-    );
+    let workRecords: any[];
+    let finalYear: number;
+    let finalMonth: number;
 
-    let totalAmount: number;
-    let totalWorkDays: number;
+    // If year and month are provided, use them
+    if (year && month) {
+      workRecords = await workRecordModel.getWorkRecordsByEmployeeAndMonth(
+        employeeId,
+        year,
+        month
+      );
+      finalYear = year;
+      finalMonth = month;
+    } else {
+      // Auto-detect: get all work records with status "Tạo mới"
+      workRecords = await workRecordModel.getWorkRecordsByEmployeeWithStatus(
+        employeeId,
+        'Tạo mới'
+      );
 
-    // If no work records, use default salary from employees table
+      if (workRecords.length === 0) {
+        const employee = await employeeModel.getEmployeeById(employeeId);
+        if (!employee) {
+          throw new Error('Không tìm thấy nhân viên');
+        }
+        throw new Error(`Nhân viên ${employee.firstName} ${employee.lastName} không có bản ghi công việc nào ở trạng thái "Tạo mới" để tính lương`);
+      }
+
+      // Get date range from work records to determine year/month
+      const recordIds = workRecords.map(r => r.id);
+      const dateRange = await workRecordModel.getWorkRecordDateRange(recordIds);
+      
+      if (!dateRange) {
+        throw new Error('Không thể xác định ngày từ bản ghi công việc');
+      }
+
+      // Use the month with the most work records, or the latest month
+      // Group by year/month and find the one with most records
+      const monthCounts: Record<string, number> = {};
+      workRecords.forEach(record => {
+        const recordDate = new Date(record.workDate);
+        const key = `${recordDate.getFullYear()}-${recordDate.getMonth() + 1}`;
+        monthCounts[key] = (monthCounts[key] || 0) + 1;
+      });
+
+      // Find month with most records, or use the latest date
+      let maxCount = 0;
+      let selectedKey = '';
+      for (const [key, count] of Object.entries(monthCounts)) {
+        if (count > maxCount) {
+          maxCount = count;
+          selectedKey = key;
+        }
+      }
+
+      // If no clear winner, use the latest date
+      if (!selectedKey) {
+        finalYear = dateRange.maxDate.getFullYear();
+        finalMonth = dateRange.maxDate.getMonth() + 1;
+      } else {
+        const [y, m] = selectedKey.split('-').map(Number);
+        finalYear = y;
+        finalMonth = m;
+      }
+    }
+
+    // If no work records, throw error (no default salary)
     if (workRecords.length === 0) {
-      // Get employee to check default salary
       const employee = await employeeModel.getEmployeeById(employeeId);
       if (!employee) {
         throw new Error('Không tìm thấy nhân viên');
       }
-      if (!employee.salary || employee.salary === 0) {
-        throw new Error(`Không có dữ liệu lương cho nhân viên ${employee.firstName} ${employee.lastName}`);
-      }
-      // Use default salary
-      totalAmount = employee.salary;
-      totalWorkDays = 0;
-    } else {
-      // Calculate total amount from work records
-      totalAmount = workRecords.reduce((sum, record) => sum + record.totalAmount, 0);
-      
-      // Calculate unique work days directly from database using SQL
-      // This ensures accurate counting of distinct work dates
-      const uniqueDaysQuery = await pool.query(
-        `SELECT COUNT(DISTINCT work_date) as unique_days
-         FROM work_records
-         WHERE employee_id = $1
-           AND EXTRACT(YEAR FROM work_date) = $2
-           AND EXTRACT(MONTH FROM work_date) = $3`,
-        [employeeId, year, month]
-      );
-      totalWorkDays = parseInt(uniqueDaysQuery.rows[0].unique_days) || 0;
+      throw new Error(`Nhân viên ${employee.firstName} ${employee.lastName} không có bản ghi công việc nào ở trạng thái "Tạo mới" để tính lương`);
     }
 
-    // Check if monthly salary already exists
-    const existing = await this.getMonthlySalaryByEmployeeAndMonth(employeeId, year, month);
+    // Calculate total amount from work records
+    const totalAmount = workRecords.reduce((sum, record) => sum + record.totalAmount, 0);
+    
+    // Calculate unique work days directly from database using SQL
+    // This ensures accurate counting of distinct work dates
+    // Only count records with status = 'Tạo mới'
+    const recordIds = workRecords.map(r => r.id);
+    const uniqueDaysQuery = await pool.query(
+      `SELECT COUNT(DISTINCT work_date) as unique_days
+       FROM work_records
+       WHERE id = ANY($1::uuid[])
+         AND status = 'Tạo mới'`,
+      [recordIds]
+    );
+    const totalWorkDays = parseInt(uniqueDaysQuery.rows[0].unique_days) || 0;
 
-    if (existing) {
-      // Only allow recalc when status is 'Tạm tính'
-      if (existing.status === 'Thanh toán') {
-        throw new Error('Không thể tính lại lương đã thanh toán');
-      }
-      // Update existing - set calculated_at to current timestamp
-      const result = await pool.query(
-        `UPDATE monthly_salaries 
-         SET total_work_days = $1, total_amount = $2, status = 'Tạm tính', calculated_at = NOW()
-         WHERE id = $3
-         RETURNING *`,
-        [totalWorkDays, totalAmount, existing.id]
+    // Always create new record (no checking for existing since UNIQUE constraint is removed)
+    const result = await pool.query(
+      `INSERT INTO monthly_salaries (
+        employee_id, year, month, total_work_days, total_amount, status, calculated_at
+      ) VALUES ($1, $2, $3, $4, $5, 'Tạm tính', NOW())
+      RETURNING *`,
+      [employeeId, finalYear, finalMonth, totalWorkDays, totalAmount]
+    );
+    
+    const monthlySalaryId = result.rows[0].id;
+    
+    // Save work record IDs to junction table
+    if (recordIds.length > 0) {
+      // Use unnest to insert multiple rows efficiently
+      await pool.query(
+        `INSERT INTO monthly_salary_work_records (monthly_salary_id, work_record_id)
+         SELECT $1::uuid, unnest($2::uuid[])
+         ON CONFLICT (monthly_salary_id, work_record_id) DO NOTHING`,
+        [monthlySalaryId, recordIds]
       );
-      return this.getMonthlySalaryById(result.rows[0].id) as Promise<MonthlySalaryResponse>;
-    } else {
-      // Create new - set calculated_at to current timestamp
-      const result = await pool.query(
-        `INSERT INTO monthly_salaries (
-          employee_id, year, month, total_work_days, total_amount, status, calculated_at
-        ) VALUES ($1, $2, $3, $4, $5, 'Tạm tính', NOW())
-        RETURNING *`,
-        [employeeId, year, month, totalWorkDays, totalAmount]
-      );
-      return this.getMonthlySalaryById(result.rows[0].id) as Promise<MonthlySalaryResponse>;
     }
+    
+    return this.getMonthlySalaryById(monthlySalaryId) as Promise<MonthlySalaryResponse>;
   }
 
   async updateAllowances(id: string, allowances: number): Promise<MonthlySalaryResponse | null> {
@@ -262,17 +308,184 @@ class MonthlySalaryModel {
     return this.getMonthlySalaryById(id);
   }
 
-  async payMonthlySalary(id: string): Promise<MonthlySalaryResponse | null> {
-    // Set status to 'Thanh toán' and paid_at
-    const result = await pool.query(
-      `UPDATE monthly_salaries
-       SET status = 'Thanh toán', paid_at = NOW()
-       WHERE id = $1
-       RETURNING *`,
-      [id]
+  async getAllTemporarySalariesByEmployee(employeeId: string): Promise<MonthlySalaryResponse[]> {
+    const query = `
+      SELECT ms.*,
+        e.first_name as employee_first_name,
+        e.last_name as employee_last_name,
+        e.employee_id as employee_employee_id
+      FROM monthly_salaries ms
+      LEFT JOIN employees e ON ms.employee_id = e.id
+      WHERE ms.employee_id = $1
+        AND ms.status = 'Tạm tính'
+      ORDER BY ms.year DESC, ms.month DESC
+    `;
+
+    const result = await pool.query(query, [employeeId]);
+    return result.rows.map((row) => this.mapToMonthlySalaryResponse(row));
+  }
+
+  async getAllPaidSalariesByEmployee(employeeId: string): Promise<MonthlySalaryResponse[]> {
+    const query = `
+      SELECT ms.*,
+        e.first_name as employee_first_name,
+        e.last_name as employee_last_name,
+        e.employee_id as employee_employee_id
+      FROM monthly_salaries ms
+      LEFT JOIN employees e ON ms.employee_id = e.id
+      WHERE ms.employee_id = $1
+        AND ms.status = 'Thanh toán'
+      ORDER BY ms.year DESC, ms.month DESC
+    `;
+
+    const result = await pool.query(query, [employeeId]);
+    return result.rows.map((row) => this.mapToMonthlySalaryResponse(row));
+  }
+
+  async mergeAndPaySalaries(
+    primarySalaryId: string,
+    employeeId: string
+  ): Promise<MonthlySalaryResponse> {
+    // Get primary salary to use its year/month for the merged record
+    const primarySalary = await this.getMonthlySalaryById(primarySalaryId);
+    if (!primarySalary) {
+      throw new Error('Không tìm thấy bảng lương chính');
+    }
+
+    // Check if primary salary is already paid
+    if (primarySalary.status === 'Thanh toán') {
+      throw new Error('Bảng lương này đã được thanh toán');
+    }
+
+    // Check if primary salary is temporary
+    if (primarySalary.status !== 'Tạm tính') {
+      throw new Error('Chỉ có thể thanh toán bảng lương ở trạng thái "Tạm tính"');
+    }
+
+    // Get all temporary salaries for this employee (to be paid)
+    const temporarySalaries = await this.getAllTemporarySalariesByEmployee(employeeId);
+
+    if (temporarySalaries.length === 0) {
+      throw new Error('Không có bảng lương tạm tính nào để thanh toán');
+    }
+
+    // Ensure primary salary is included in the list (it should be, but double-check)
+    const primaryIncluded = temporarySalaries.some(s => s.id === primarySalaryId);
+    if (!primaryIncluded) {
+      temporarySalaries.push(primarySalary);
+    }
+
+    // Get all paid salaries for this employee (to be merged)
+    const paidSalaries = await this.getAllPaidSalariesByEmployee(employeeId);
+
+    // Combine all salaries to merge (temporary + paid)
+    const allSalariesToMerge = [...temporarySalaries, ...paidSalaries];
+
+    // If only one temporary salary and no paid salaries, just pay it
+    if (temporarySalaries.length === 1 && paidSalaries.length === 0) {
+      const singleSalary = temporarySalaries[0];
+      
+      // Get all work record IDs from junction table
+      const junctionResult = await pool.query(
+        `SELECT work_record_id FROM monthly_salary_work_records
+         WHERE monthly_salary_id = $1`,
+        [singleSalary.id]
+      );
+      const workRecordIds = junctionResult.rows.map(row => row.work_record_id);
+
+      // Update work records status
+      if (workRecordIds.length > 0) {
+        await workRecordModel.updateWorkRecordsStatus(workRecordIds, 'Đã thanh toán');
+      }
+
+      // Update salary status
+      const result = await pool.query(
+        `UPDATE monthly_salaries
+         SET status = 'Thanh toán', paid_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [singleSalary.id]
+      );
+      
+      return this.getMonthlySalaryById(result.rows[0].id) as Promise<MonthlySalaryResponse>;
+    }
+
+    // Multiple salaries - merge them (both temporary and paid)
+    const totalAmount = allSalariesToMerge.reduce((sum, s) => sum + s.totalAmount + (s.allowances || 0), 0);
+    const totalWorkDays = allSalariesToMerge.reduce((sum, s) => sum + s.totalWorkDays, 0);
+    const totalAllowances = allSalariesToMerge.reduce((sum, s) => sum + (s.allowances || 0), 0);
+
+    // Get all work record IDs from all salaries (both temporary and paid) from junction table
+    const salaryIds = allSalariesToMerge.map(s => s.id);
+    const junctionResult = await pool.query(
+      `SELECT DISTINCT work_record_id FROM monthly_salary_work_records
+       WHERE monthly_salary_id = ANY($1::uuid[])`,
+      [salaryIds]
     );
-    if (result.rows.length === 0) return null;
-    return this.getMonthlySalaryById(id);
+    const workRecordIds = junctionResult.rows.map(row => row.work_record_id);
+
+    // Update work records status (only for temporary salaries, paid ones already have status "Đã thanh toán")
+    const temporarySalaryIds = temporarySalaries.map(s => s.id);
+    if (temporarySalaryIds.length > 0) {
+      const temporaryJunctionResult = await pool.query(
+        `SELECT DISTINCT work_record_id FROM monthly_salary_work_records
+         WHERE monthly_salary_id = ANY($1::uuid[])`,
+        [temporarySalaryIds]
+      );
+      const temporaryWorkRecordIds = temporaryJunctionResult.rows.map(row => row.work_record_id);
+      
+      if (temporaryWorkRecordIds.length > 0) {
+        await workRecordModel.updateWorkRecordsStatus(temporaryWorkRecordIds, 'Đã thanh toán');
+      }
+    }
+
+    // Delete all salaries (both temporary and paid) - cascade will delete junction records
+    await pool.query(
+      `DELETE FROM monthly_salaries WHERE id = ANY($1::uuid[])`,
+      [salaryIds]
+    );
+
+    // Create merged salary record using primary salary's year/month
+    const result = await pool.query(
+      `INSERT INTO monthly_salaries (
+        employee_id, year, month, total_work_days, total_amount, allowances, status, calculated_at, paid_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, 'Thanh toán', NOW(), NOW())
+      RETURNING *`,
+      [
+        employeeId,
+        primarySalary.year,
+        primarySalary.month,
+        totalWorkDays,
+        totalAmount - totalAllowances, // total_amount should not include allowances
+        totalAllowances
+      ]
+    );
+
+    const mergedSalaryId = result.rows[0].id;
+
+    // Save all work record IDs to merged salary in junction table
+    if (workRecordIds.length > 0) {
+      // Use unnest to insert multiple rows efficiently
+      await pool.query(
+        `INSERT INTO monthly_salary_work_records (monthly_salary_id, work_record_id)
+         SELECT $1::uuid, unnest($2::uuid[])
+         ON CONFLICT (monthly_salary_id, work_record_id) DO NOTHING`,
+        [mergedSalaryId, workRecordIds]
+      );
+    }
+
+    return this.getMonthlySalaryById(mergedSalaryId) as Promise<MonthlySalaryResponse>;
+  }
+
+  async payMonthlySalary(id: string): Promise<MonthlySalaryResponse | null> {
+    // Get the salary to get employeeId
+    const salary = await this.getMonthlySalaryById(id);
+    if (!salary) {
+      return null;
+    }
+
+    // Use merge and pay logic
+    return this.mergeAndPaySalaries(id, salary.employeeId);
   }
 
   async deleteMonthlySalary(id: string): Promise<boolean> {

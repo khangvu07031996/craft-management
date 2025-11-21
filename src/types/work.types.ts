@@ -76,6 +76,7 @@ export interface WorkRecordResponse {
   overtimeQuantity?: number;
   overtimeHours?: number;
   notes?: string;
+  status?: 'Tạo mới' | 'Đã thanh toán';
   createdBy: string;
   createdByUser?: {
     id: string;
@@ -97,6 +98,7 @@ export interface CreateWorkRecordDto {
   overtimeQuantity?: number;
   overtimeHours?: number;
   notes?: string;
+  status?: 'Tạo mới' | 'Đã thanh toán';
 }
 
 export interface UpdateWorkRecordDto {
@@ -110,6 +112,7 @@ export interface UpdateWorkRecordDto {
   overtimeQuantity?: number;
   overtimeHours?: number;
   notes?: string;
+  status?: 'Tạo mới' | 'Đã thanh toán';
 }
 
 // Monthly Salary Types
@@ -136,8 +139,8 @@ export interface MonthlySalaryResponse {
 
 export interface CalculateMonthlySalaryDto {
   employeeId: string;
-  year: number;
-  month: number;
+  year?: number;  // Optional - auto-detect from work records
+  month?: number; // Optional - auto-detect from work records
 }
 
 // Work Report Types
