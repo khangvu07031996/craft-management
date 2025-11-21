@@ -308,7 +308,29 @@ class MonthlySalaryModel {
     return this.getMonthlySalaryById(id);
   }
 
-  async getAllTemporarySalariesByEmployee(employeeId: string): Promise<MonthlySalaryResponse[]> {
+  async getAllTemporarySalariesByEmployee(
+    employeeId: string,
+    year?: number,
+    month?: number
+  ): Promise<MonthlySalaryResponse[]> {
+    const conditions: string[] = ['ms.employee_id = $1', "ms.status = 'Tạm tính'"];
+    const values: any[] = [employeeId];
+    let paramCount = 2;
+
+    if (year !== undefined) {
+      conditions.push(`ms.year = $${paramCount}`);
+      values.push(year);
+      paramCount++;
+    }
+
+    if (month !== undefined) {
+      conditions.push(`ms.month = $${paramCount}`);
+      values.push(month);
+      paramCount++;
+    }
+
+    const whereClause = conditions.join(' AND ');
+
     const query = `
       SELECT ms.*,
         e.first_name as employee_first_name,
@@ -316,16 +338,37 @@ class MonthlySalaryModel {
         e.employee_id as employee_employee_id
       FROM monthly_salaries ms
       LEFT JOIN employees e ON ms.employee_id = e.id
-      WHERE ms.employee_id = $1
-        AND ms.status = 'Tạm tính'
+      WHERE ${whereClause}
       ORDER BY ms.year DESC, ms.month DESC
     `;
 
-    const result = await pool.query(query, [employeeId]);
+    const result = await pool.query(query, values);
     return result.rows.map((row) => this.mapToMonthlySalaryResponse(row));
   }
 
-  async getAllPaidSalariesByEmployee(employeeId: string): Promise<MonthlySalaryResponse[]> {
+  async getAllPaidSalariesByEmployee(
+    employeeId: string,
+    year?: number,
+    month?: number
+  ): Promise<MonthlySalaryResponse[]> {
+    const conditions: string[] = ['ms.employee_id = $1', "ms.status = 'Thanh toán'"];
+    const values: any[] = [employeeId];
+    let paramCount = 2;
+
+    if (year !== undefined) {
+      conditions.push(`ms.year = $${paramCount}`);
+      values.push(year);
+      paramCount++;
+    }
+
+    if (month !== undefined) {
+      conditions.push(`ms.month = $${paramCount}`);
+      values.push(month);
+      paramCount++;
+    }
+
+    const whereClause = conditions.join(' AND ');
+
     const query = `
       SELECT ms.*,
         e.first_name as employee_first_name,
@@ -333,12 +376,11 @@ class MonthlySalaryModel {
         e.employee_id as employee_employee_id
       FROM monthly_salaries ms
       LEFT JOIN employees e ON ms.employee_id = e.id
-      WHERE ms.employee_id = $1
-        AND ms.status = 'Thanh toán'
+      WHERE ${whereClause}
       ORDER BY ms.year DESC, ms.month DESC
     `;
 
-    const result = await pool.query(query, [employeeId]);
+    const result = await pool.query(query, values);
     return result.rows.map((row) => this.mapToMonthlySalaryResponse(row));
   }
 
@@ -362,8 +404,12 @@ class MonthlySalaryModel {
       throw new Error('Chỉ có thể thanh toán bảng lương ở trạng thái "Tạm tính"');
     }
 
-    // Get all temporary salaries for this employee (to be paid)
-    const temporarySalaries = await this.getAllTemporarySalariesByEmployee(employeeId);
+    // Get all temporary salaries for this employee in the same month (to be paid)
+    const temporarySalaries = await this.getAllTemporarySalariesByEmployee(
+      employeeId,
+      primarySalary.year,
+      primarySalary.month
+    );
 
     if (temporarySalaries.length === 0) {
       throw new Error('Không có bảng lương tạm tính nào để thanh toán');
@@ -375,8 +421,12 @@ class MonthlySalaryModel {
       temporarySalaries.push(primarySalary);
     }
 
-    // Get all paid salaries for this employee (to be merged)
-    const paidSalaries = await this.getAllPaidSalariesByEmployee(employeeId);
+    // Get all paid salaries for this employee in the same month (to be merged)
+    const paidSalaries = await this.getAllPaidSalariesByEmployee(
+      employeeId,
+      primarySalary.year,
+      primarySalary.month
+    );
 
     // Combine all salaries to merge (temporary + paid)
     const allSalariesToMerge = [...temporarySalaries, ...paidSalaries];
