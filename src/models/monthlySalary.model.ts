@@ -271,6 +271,18 @@ class MonthlySalaryModel {
     );
     const totalWorkDays = parseInt(uniqueDaysQuery.rows[0].unique_days) || 0;
 
+    // Check if there's already a "Tạm tính" salary for this employee and month/year
+    const existingTemporarySalaries = await this.getAllTemporarySalariesByEmployee(
+      employeeId,
+      finalYear,
+      finalMonth
+    );
+    if (existingTemporarySalaries.length > 0) {
+      throw new Error(
+        `Nhân viên này đã có bảng lương tạm tính cho tháng ${finalMonth}/${finalYear}. Vui lòng xóa bảng lương cũ trước khi tính lại.`
+      );
+    }
+
     // Always create new record (no checking for existing since UNIQUE constraint is removed)
     const result = await pool.query(
       `INSERT INTO monthly_salaries (
@@ -539,14 +551,27 @@ class MonthlySalaryModel {
   }
 
   async deleteMonthlySalary(id: string): Promise<boolean> {
-    // Check status first
+    // Get salary to check if it exists
     const ms = await this.getMonthlySalaryById(id);
     if (!ms) return false;
+    
+    // If status is "Thanh toán", revert work records to "Tạo mới" before deleting
     if (ms.status === 'Thanh toán') {
-      const err: any = new Error('Không thể xoá bảng lương đã thanh toán');
-      err.code = 'PAID_DELETE_FORBIDDEN';
-      throw err;
+      // Get all work record IDs from junction table
+      const junctionResult = await pool.query(
+        `SELECT work_record_id FROM monthly_salary_work_records
+         WHERE monthly_salary_id = $1`,
+        [id]
+      );
+      const workRecordIds = junctionResult.rows.map(row => row.work_record_id);
+      
+      // Revert work records status to "Tạo mới" if there are any
+      if (workRecordIds.length > 0) {
+        await workRecordModel.updateWorkRecordsStatus(workRecordIds, 'Tạo mới');
+      }
     }
+    
+    // Delete the salary record (CASCADE will delete junction records)
     await pool.query(`DELETE FROM monthly_salaries WHERE id = $1`, [id]);
     return true;
   }
