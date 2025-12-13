@@ -16,7 +16,7 @@ router.get('/', requireAdmin, employeeController.getAllEmployees.bind(employeeCo
 router.get('/stats/departments', requireAdmin, employeeController.getEmployeesByDepartment.bind(employeeController));
 
 // GET /api/employees/me - Get current employee's own info (Employee only)
-router.get('/me', requireEmployee, async (req, res, next) => {
+router.get('/me', requireEmployee, async (req, res) => {
   try {
     const userId = req.user?.userId;
     if (!userId) {
@@ -30,7 +30,7 @@ router.get('/me', requireEmployee, async (req, res, next) => {
     
     // Set params.id to user's employeeId so controller can use it
     req.params.id = user.employeeId;
-    return employeeController.getEmployeeById(req, res, next);
+    return employeeController.getEmployeeById(req, res);
   } catch (error: any) {
     return res.status(500).json({
       success: false,
@@ -41,7 +41,7 @@ router.get('/me', requireEmployee, async (req, res, next) => {
 });
 
 // GET /api/employees/:id - Get employee by ID (Admin only, or employee getting their own)
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', async (req, res) => {
   try {
     const userId = req.user?.userId;
     const employeeId = req.params.id;
@@ -66,7 +66,7 @@ router.get('/:id', async (req, res, next) => {
     }
     
     // Use the existing controller method
-    return employeeController.getEmployeeById(req, res, next);
+    return employeeController.getEmployeeById(req, res);
   } catch (error: any) {
     return res.status(500).json({
       success: false,
