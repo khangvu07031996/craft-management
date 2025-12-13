@@ -132,6 +132,21 @@ export async function setupDatabase(): Promise<void> {
         console.warn('⚠️ Monthly salary work records migration warning:', error.message);
       }
     }
+
+    // Add employee role and link user to employee
+    try {
+      const employeeRoleMigration = fs.readFileSync(
+        path.join(__dirname, 'add_employee_role_and_link.sql'),
+        'utf-8'
+      );
+      await pool.query(employeeRoleMigration);
+      console.log('✅ Employee role and link migration completed');
+    } catch (error: any) {
+      // Migration might already be applied, that's okay
+      if (!error.message.includes('already exists') && !error.message.includes('duplicate') && !error.message.includes('column')) {
+        console.warn('⚠️ Employee role migration warning:', error.message);
+      }
+    }
     
     console.log('✅ Database setup completed successfully');
   } catch (error) {

@@ -56,13 +56,20 @@ class WorkRecordModel {
       status?: string;
     },
     page: number = 1,
-    pageSize: number = 10
+    pageSize: number = 10,
+    userRole?: string,
+    userEmployeeId?: string
   ): Promise<{ workRecords: WorkRecordResponse[]; total: number }> {
     const conditions: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
 
-    if (filters.employeeId) {
+    // If user is employee, only show their own records
+    if (userRole === 'employee' && userEmployeeId) {
+      conditions.push(`wr.employee_id = $${paramCount}`);
+      values.push(userEmployeeId);
+      paramCount++;
+    } else if (filters.employeeId) {
       conditions.push(`wr.employee_id = $${paramCount}`);
       values.push(filters.employeeId);
       paramCount++;

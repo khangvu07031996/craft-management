@@ -17,6 +17,9 @@ router.get('/:id', requireMember, userController.getUserById.bind(userController
 // POST /api/users - Create new user (Admin only)
 router.post('/', requireAdmin, userController.createUser.bind(userController));
 
+// POST /api/users/create-employee-account - Create employee account (Admin only)
+router.post('/create-employee-account', requireAdmin, userController.createEmployeeAccount.bind(userController));
+
 // PUT /api/users/:id - Update user (Admin only)
 router.put('/:id', requireAdmin, userController.updateUser.bind(userController));
 

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import userModel from '../models/user.model';
-import { CreateUserDto, UpdateUserDto } from '../types/user.types';
+import employeeModel from '../models/employee.model';
+import { CreateUserDto, UpdateUserDto, CreateEmployeeAccountDto, UserRole } from '../types/user.types';
 
 class UserController {
   // GET /api/users - Get all users
@@ -152,6 +153,134 @@ class UserController {
       res.status(500).json({
         success: false,
         message: 'Server error while deleting user',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // POST /api/users/create-employee-account - Create employee account
+  async createEmployeeAccount(req: Request, res: Response): Promise<void> {
+    try {
+      const accountData: CreateEmployeeAccountDto = req.body;
+
+      // Validate input data
+      if (!accountData.email || !accountData.firstName || !accountData.lastName || !accountData.password) {
+        res.status(400).json({
+          success: false,
+          message: 'Email, firstName, lastName, and password are required',
+        });
+        return;
+      }
+
+      // Check if email already exists
+      const existingUser = await userModel.findByEmail(accountData.email);
+      if (existingUser) {
+        res.status(409).json({
+          success: false,
+          message: 'Email is already in use',
+        });
+        return;
+      }
+
+      let employeeId: string | undefined;
+
+      // Option 1: Link with existing employee
+      if (accountData.employeeId) {
+        const employee = await employeeModel.getEmployeeById(accountData.employeeId);
+        if (!employee) {
+          res.status(404).json({
+            success: false,
+            message: `Employee not found with ID: ${accountData.employeeId}`,
+          });
+          return;
+        }
+
+        // Check if employee already has an account
+        const existingEmployeeUser = await userModel.getAllUsers();
+        const hasAccount = existingEmployeeUser.some(u => u.employeeId === accountData.employeeId);
+        if (hasAccount) {
+          res.status(409).json({
+            success: false,
+            message: 'Employee already has an account',
+          });
+          return;
+        }
+
+        employeeId = accountData.employeeId;
+      } 
+      // Option 2: Create new employee
+      else if (accountData.employeeData) {
+        const { employeeData } = accountData;
+        
+        // Validate employee data
+        if (!employeeData.email || !employeeData.position || !employeeData.department || !employeeData.hireDate) {
+          res.status(400).json({
+            success: false,
+            message: 'Employee email, position, department, and hireDate are required',
+          });
+          return;
+        }
+
+        // Check if employee email already exists
+        const existingEmployee = await employeeModel.findByEmail(employeeData.email);
+        if (existingEmployee) {
+          res.status(409).json({
+            success: false,
+            message: 'Employee email is already in use',
+          });
+          return;
+        }
+
+        // Create new employee
+        const newEmployee = await employeeModel.createEmployee({
+          employeeId: employeeData.employeeId,
+          firstName: accountData.firstName,
+          lastName: accountData.lastName,
+          email: employeeData.email,
+          phoneNumber: employeeData.phoneNumber || accountData.phoneNumber,
+          position: employeeData.position,
+          department: employeeData.department,
+          salary: employeeData.salary,
+          hireDate: employeeData.hireDate,
+          managerId: employeeData.managerId,
+        });
+
+        employeeId = newEmployee.id;
+      } else {
+        res.status(400).json({
+          success: false,
+          message: 'Either employeeId or employeeData must be provided',
+        });
+        return;
+      }
+
+      // Create user with employee role
+      const newUser = await userModel.createUser({
+        email: accountData.email,
+        password: accountData.password,
+        firstName: accountData.firstName,
+        lastName: accountData.lastName,
+        phoneNumber: accountData.phoneNumber,
+        address: accountData.address,
+        role: UserRole.EMPLOYEE,
+        employeeId: employeeId,
+      });
+
+      // Get employee info to return
+      const employee = await employeeModel.getEmployeeById(employeeId!);
+
+      res.status(201).json({
+        success: true,
+        message: 'Employee account created successfully',
+        data: {
+          user: newUser,
+          employee: employee,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Server error while creating employee account',
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }

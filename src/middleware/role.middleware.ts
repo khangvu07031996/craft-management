@@ -54,3 +54,6 @@ export const requireAdmin = requireRole(UserRole.ADMIN);
 // Shorthand for member or admin routes
 export const requireMember = requireRole(UserRole.MEMBER, UserRole.ADMIN);
 
+// Shorthand for employee or admin routes
+export const requireEmployee = requireRole(UserRole.EMPLOYEE, UserRole.ADMIN);
+

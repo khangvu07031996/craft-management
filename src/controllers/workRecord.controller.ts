@@ -1,11 +1,25 @@
 import { Request, Response } from 'express';
 import workRecordModel from '../models/workRecord.model';
 import workTypeModel from '../models/workType.model';
+import userModel from '../models/user.model';
 import { CreateWorkRecordDto, UpdateWorkRecordDto } from '../types/work.types';
 
 export const getAllWorkRecords = async (req: Request, res: Response) => {
   try {
     const { employee_id, date_from, date_to, work_type_id, status, page = '1', page_size = '10' } = req.query;
+
+    // Get user info to check role and employeeId
+    const userId = req.user?.userId;
+    let userRole: string | undefined;
+    let userEmployeeId: string | undefined;
+
+    if (userId) {
+      const user = await userModel.getUserById(userId);
+      if (user) {
+        userRole = user.role;
+        userEmployeeId = user.employeeId;
+      }
+    }
 
     const filters = {
       employeeId: employee_id as string | undefined,
@@ -18,11 +32,14 @@ export const getAllWorkRecords = async (req: Request, res: Response) => {
     // Debug logging
     console.log('WorkRecordController.getAllWorkRecords - Query params:', req.query);
     console.log('WorkRecordController.getAllWorkRecords - Filters:', filters);
+    console.log('WorkRecordController.getAllWorkRecords - User role:', userRole, 'Employee ID:', userEmployeeId);
 
     const result = await workRecordModel.getAllWorkRecords(
       filters,
       parseInt(page as string),
-      parseInt(page_size as string)
+      parseInt(page_size as string),
+      userRole,
+      userEmployeeId
     );
 
     console.log('WorkRecordController.getAllWorkRecords - Result count:', result.workRecords.length);
@@ -82,6 +99,28 @@ export const createWorkRecord = async (req: Request, res: Response) => {
       return res.status(401).json({
         success: false,
         message: 'Unauthorized',
+      });
+    }
+
+    // Get user info to check role
+    const user = await userModel.getUserById(userId);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // If user is employee, automatically set employeeId to their employee_id
+    if (user.role === 'employee' && user.employeeId) {
+      workRecordData.employeeId = user.employeeId;
+    }
+
+    // If user is employee, they cannot create records for other employees
+    if (user.role === 'employee' && workRecordData.employeeId && workRecordData.employeeId !== user.employeeId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only create work records for yourself',
       });
     }
 
@@ -156,6 +195,48 @@ export const updateWorkRecord = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const workRecordData: UpdateWorkRecordDto = req.body;
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized',
+      });
+    }
+
+    // Get existing record to check ownership
+    const existing = await workRecordModel.getWorkRecordById(id);
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'Work record not found',
+      });
+    }
+
+    // Get user info to check role
+    const user = await userModel.getUserById(userId);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // If user is employee, they can only update their own records
+    if (user.role === 'employee' && existing.employeeId !== user.employeeId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update your own work records',
+      });
+    }
+
+    // If user is employee, prevent changing employeeId
+    if (user.role === 'employee' && workRecordData.employeeId && workRecordData.employeeId !== user.employeeId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You cannot change the employee ID',
+      });
+    }
 
     if (workRecordData.quantity !== undefined && workRecordData.quantity <= 0) {
       return res.status(400).json({
@@ -166,14 +247,7 @@ export const updateWorkRecord = async (req: Request, res: Response) => {
 
     // Validate overtime fields
     if (workRecordData.isOvertime) {
-      // Get existing record to determine work type
-      const existing = await workRecordModel.getWorkRecordById(id);
-      if (!existing) {
-        return res.status(404).json({
-          success: false,
-          message: 'Work record not found',
-        });
-      }
+      // Get existing record to determine work type (already fetched above)
 
       const workTypeId = workRecordData.workTypeId || existing.workTypeId;
       const workType = await workTypeModel.getWorkTypeById(workTypeId);
@@ -236,6 +310,41 @@ export const updateWorkRecord = async (req: Request, res: Response) => {
 export const deleteWorkRecord = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized',
+      });
+    }
+
+    // Get existing record to check ownership
+    const existing = await workRecordModel.getWorkRecordById(id);
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'Work record not found',
+      });
+    }
+
+    // Get user info to check role
+    const user = await userModel.getUserById(userId);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // If user is employee, they can only delete their own records
+    if (user.role === 'employee' && existing.employeeId !== user.employeeId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only delete your own work records',
+      });
+    }
+
     const deleted = await workRecordModel.deleteWorkRecord(id);
 
     if (!deleted) {

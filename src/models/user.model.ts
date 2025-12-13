@@ -6,7 +6,7 @@ class UserModel {
   // Get all users
   async getAllUsers(): Promise<UserResponse[]> {
     const result = await pool.query(
-      'SELECT id, email, first_name as "firstName", last_name as "lastName", phone_number as "phoneNumber", address, role, age, created_at, updated_at FROM users ORDER BY created_at DESC'
+      'SELECT id, email, first_name as "firstName", last_name as "lastName", phone_number as "phoneNumber", address, role, employee_id as "employeeId", age, created_at, updated_at FROM users ORDER BY created_at DESC'
     );
     return result.rows;
   }
@@ -14,7 +14,7 @@ class UserModel {
   // Get user by ID
   async getUserById(id: string): Promise<UserResponse | null> {
     const result = await pool.query(
-      'SELECT id, email, first_name as "firstName", last_name as "lastName", phone_number as "phoneNumber", address, role, age, created_at, updated_at FROM users WHERE id = $1',
+      'SELECT id, email, first_name as "firstName", last_name as "lastName", phone_number as "phoneNumber", address, role, employee_id as "employeeId", age, created_at, updated_at FROM users WHERE id = $1',
       [id]
     );
     return result.rows[0] || null;
@@ -23,7 +23,7 @@ class UserModel {
   // Get user by email (with password for authentication)
   async getUserByEmail(email: string): Promise<User | null> {
     const result = await pool.query(
-      'SELECT id, email, password, first_name as "firstName", last_name as "lastName", phone_number as "phoneNumber", address, role, age, created_at, updated_at FROM users WHERE email = $1',
+      'SELECT id, email, password, first_name as "firstName", last_name as "lastName", phone_number as "phoneNumber", address, role, employee_id as "employeeId", age, created_at, updated_at FROM users WHERE email = $1',
       [email]
     );
     const row = result.rows[0];
@@ -39,6 +39,7 @@ class UserModel {
       phoneNumber: row.phoneNumber,
       address: row.address,
       role: row.role,
+      employeeId: row.employeeId,
       age: row.age,
       created_at: row.created_at,
       updated_at: row.updated_at,
@@ -47,7 +48,7 @@ class UserModel {
 
   // Create new user
   async createUser(userData: CreateUserDto): Promise<UserResponse> {
-    const { email, password, firstName, lastName, phoneNumber, address, role, age } = userData;
+    const { email, password, firstName, lastName, phoneNumber, address, role, employeeId, age } = userData;
     
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -56,10 +57,10 @@ class UserModel {
     const userRole = role || UserRole.MEMBER;
     
     const result = await pool.query(
-      `INSERT INTO users (email, password, first_name, last_name, phone_number, address, role, age) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
-       RETURNING id, email, first_name as "firstName", last_name as "lastName", phone_number as "phoneNumber", address, role, age, created_at, updated_at`,
-      [email, hashedPassword, firstName, lastName, phoneNumber, address, userRole, age]
+      `INSERT INTO users (email, password, first_name, last_name, phone_number, address, role, employee_id, age) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+       RETURNING id, email, first_name as "firstName", last_name as "lastName", phone_number as "phoneNumber", address, role, employee_id as "employeeId", age, created_at, updated_at`,
+      [email, hashedPassword, firstName, lastName, phoneNumber, address, userRole, employeeId, age]
     );
     
     return result.rows[0];
@@ -113,7 +114,7 @@ class UserModel {
       UPDATE users 
       SET ${updates.join(', ')} 
       WHERE id = $${paramCount}
-      RETURNING id, email, first_name as "firstName", last_name as "lastName", phone_number as "phoneNumber", address, role, age, created_at, updated_at
+      RETURNING id, email, first_name as "firstName", last_name as "lastName", phone_number as "phoneNumber", address, role, employee_id as "employeeId", age, created_at, updated_at
     `;
 
     const result = await pool.query(query, values);
@@ -132,7 +133,7 @@ class UserModel {
   // Find user by email (without password)
   async findByEmail(email: string): Promise<UserResponse | null> {
     const result = await pool.query(
-      'SELECT id, email, first_name as "firstName", last_name as "lastName", phone_number as "phoneNumber", address, role, age, created_at, updated_at FROM users WHERE email = $1',
+      'SELECT id, email, first_name as "firstName", last_name as "lastName", phone_number as "phoneNumber", address, role, employee_id as "employeeId", age, created_at, updated_at FROM users WHERE email = $1',
       [email]
     );
     return result.rows[0] || null;
