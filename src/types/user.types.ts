@@ -96,3 +96,12 @@ export interface CreateEmployeeAccountDto {
     managerId?: string;
   };
 }
+
+export interface ChangePasswordDto {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface ResetPasswordResponse {
+  newPassword: string;
+}

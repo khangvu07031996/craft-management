@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import userModel from '../models/user.model';
 import employeeModel from '../models/employee.model';
 import { CreateUserDto, UpdateUserDto, CreateEmployeeAccountDto, UserRole } from '../types/user.types';
+import { generatePasswordFromName } from '../utils/passwordGenerator';
 
 class UserController {
   // GET /api/users - Get all users
@@ -281,6 +282,51 @@ class UserController {
       res.status(500).json({
         success: false,
         message: 'Server error while creating employee account',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // POST /api/users/:id/reset-password - Reset user password (Admin only)
+  async resetUserPassword(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      // Check if user exists by user ID
+      let user = await userModel.getUserById(id);
+      
+      // If not found by user ID, try finding by employee_id
+      if (!user) {
+        const allUsers = await userModel.getAllUsers();
+        user = allUsers.find(u => u.employeeId === id) || null;
+      }
+
+      if (!user) {
+        res.status(404).json({
+          success: false,
+          message: `User not found with ID or Employee ID: ${id}`,
+        });
+        return;
+      }
+
+      // Generate new password based on user's name (lastname+firstname123)
+      const newPassword = generatePasswordFromName(user.firstName, user.lastName);
+
+      // Update user password using the found user's ID
+      await userModel.updatePassword(user.id, newPassword);
+
+      res.status(200).json({
+        success: true,
+        message: 'Password reset successfully',
+        data: {
+          newPassword,
+        },
+      });
+    } catch (error) {
+      console.error('Reset password error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Server error while resetting password',
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }

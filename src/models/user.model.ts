@@ -143,6 +143,16 @@ class UserModel {
   async verifyPassword(plainPassword: string, hashedPassword: string): Promise<boolean> {
     return bcrypt.compare(plainPassword, hashedPassword);
   }
+
+  // Update password
+  async updatePassword(userId: string, newPassword: string): Promise<boolean> {
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const result = await pool.query(
+      'UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [hashedPassword, userId]
+    );
+    return (result.rowCount || 0) > 0;
+  }
 }
 
 export default new UserModel();

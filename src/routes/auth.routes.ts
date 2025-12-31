@@ -13,4 +13,7 @@ router.post('/login', authController.login.bind(authController));
 // GET /api/auth/me - Get current user profile (protected route)
 router.get('/me', authenticate, authController.getProfile.bind(authController));
 
+// PUT /api/auth/change-password - Change password (protected route)
+router.put('/change-password', authenticate, authController.changePassword.bind(authController));
+
 export default router;
