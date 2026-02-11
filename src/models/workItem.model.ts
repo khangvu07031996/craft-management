@@ -42,6 +42,16 @@ class WorkItemModel {
     };
   }
 
+  private async getExistingSizesForSequence(
+    year: number,
+    month: number,
+    sequence: number
+  ): Promise<string[]> {
+    const sequences = await this.getSequencesInMonth(year, month);
+    const found = sequences.find((s) => s.sequence === sequence);
+    return found ? found.sizes : [];
+  }
+
   private async getNextSequenceNumber(year: number, month: number): Promise<number> {
     // Query to get max STT in the month (format: YYMM%)
     const query = `
@@ -73,7 +83,8 @@ class WorkItemModel {
   private generateProductCode(year: number, month: number, sequence: number, size: string): string {
     const yy = year.toString().slice(-2);
     const mm = month.toString().padStart(2, '0');
-    return `${yy}${mm}${sequence}${size}`;
+    const seq = sequence.toString().padStart(2, '0');
+    return `${yy}${mm}${seq}${size}`;
   }
 
   private generateName(productCode: string, description?: string, shape?: string): string {
@@ -209,11 +220,61 @@ class WorkItemModel {
     const month = now.getMonth() + 1;
     
     const createdItems: WorkItemResponse[] = [];
-    // Use provided sequence or get next new one
-    const sequence = existingSequence || await this.getNextSequenceNumber(year, month);
+    let sequence: number;
+    let sizesToCreate: string[];
+
+    if (existingSequence) {
+      // When adding to existing sequence: filter out sizes that already exist
+      sequence = existingSequence;
+      const existingSizes = await this.getExistingSizesForSequence(year, month, existingSequence);
+      sizesToCreate = sizes.filter((s) => !existingSizes.includes(s));
+      if (sizesToCreate.length === 0) {
+        throw new Error(`Tất cả cỡ đã chọn (${sizes.join(', ')}) đã tồn tại cho STT ${existingSequence}. Vui lòng chọn cỡ khác.`);
+      }
+    } else {
+      // New sequence: retry with next sequence if duplicate key
+      sizesToCreate = sizes;
+      sequence = await this.getNextSequenceNumber(year, month);
+      const maxRetries = 10;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          return await this.insertWorkItemsForSizes(
+            year, month, sequence, sizesToCreate,
+            description, shape, difficultyLevel, pricePerWeld, totalQuantity, weldsPerItem, estimatedDeliveryDate, weight
+          );
+        } catch (err: any) {
+          if (err.code === '23505' && attempt < maxRetries - 1) {
+            // Duplicate key: try next sequence (getNextSequenceNumber returns same value if no new data)
+            sequence += 1;
+            continue;
+          }
+          throw err;
+        }
+      }
+      throw new Error('Không thể tạo mã sản phẩm. Vui lòng thử lại.');
+    }
     
-    // Loop through each selected size and create a work item
-    // All sizes share the same STT, only differ by size letter
+    return await this.insertWorkItemsForSizes(
+      year, month, sequence, sizesToCreate,
+      description, shape, difficultyLevel, pricePerWeld, totalQuantity, weldsPerItem, estimatedDeliveryDate, weight
+    );
+  }
+
+  private async insertWorkItemsForSizes(
+    year: number,
+    month: number,
+    sequence: number,
+    sizes: string[],
+    description?: string,
+    shape?: string,
+    difficultyLevel?: string,
+    pricePerWeld?: number,
+    totalQuantity?: number,
+    weldsPerItem?: number,
+    estimatedDeliveryDate?: string,
+    weight?: number
+  ): Promise<WorkItemResponse[]> {
+    const createdItems: WorkItemResponse[] = [];
     for (const size of sizes) {
       const productCode = this.generateProductCode(year, month, sequence, size);
       const name = this.generateName(productCode, description, shape);
