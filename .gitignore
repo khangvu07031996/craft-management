@@ -7,3 +7,4 @@ coverage/
 .vscode/
 .idea/
 
+src/scripts/generate-test-work-records.ts
