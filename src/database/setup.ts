@@ -147,6 +147,21 @@ export async function setupDatabase(): Promise<void> {
         console.warn('⚠️ Employee role migration warning:', error.message);
       }
     }
+
+    // Add product code system to work_items
+    try {
+      const productCodeMigration = fs.readFileSync(
+        path.join(__dirname, 'add_product_code_to_work_items.sql'),
+        'utf-8'
+      );
+      await pool.query(productCodeMigration);
+      console.log('✅ Product code system migration for work_items completed');
+    } catch (error: any) {
+      // Migration might already be applied, that's okay
+      if (!error.message.includes('already exists') && !error.message.includes('duplicate') && !error.message.includes('column')) {
+        console.warn('⚠️ Product code migration warning:', error.message);
+      }
+    }
     
     console.log('✅ Database setup completed successfully');
   } catch (error) {

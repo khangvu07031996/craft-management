@@ -49,15 +49,65 @@ export const getWorkItemById = async (req: Request, res: Response) => {
   }
 };
 
+export const getSequencesInMonth = async (req: Request, res: Response) => {
+  try {
+    const { year, month } = req.params;
+    const yearNum = parseInt(year);
+    const monthNum = parseInt(month);
+    
+    if (isNaN(yearNum) || isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid year or month'
+      });
+    }
+    
+    const sequences = await workItemModel.getSequencesInMonth(yearNum, monthNum);
+    
+    return res.json({
+      success: true,
+      data: sequences
+    });
+  } catch (error: any) {
+    console.error('Error fetching sequences:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch sequences',
+      error: error.message,
+    });
+  }
+};
+
 export const createWorkItem = async (req: Request, res: Response) => {
   try {
     const workItemData: CreateWorkItemDto = req.body;
     
-    // Validation
-    if (!workItemData.name || !workItemData.difficultyLevel || workItemData.pricePerWeld === undefined) {
+    // Validation - sizes is required
+    if (!workItemData.sizes || !Array.isArray(workItemData.sizes) || workItemData.sizes.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Name, difficulty level, and price per weld are required',
+        message: 'Phải chọn ít nhất 1 cỡ sản phẩm',
+      });
+    }
+
+    // Validate sizes are valid (A-F only)
+    const allowedSizes = ['A', 'B', 'C', 'D', 'E', 'F'];
+    const invalidSizes = workItemData.sizes.filter(s => !allowedSizes.includes(s.toUpperCase()));
+    if (invalidSizes.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cỡ không hợp lệ: ${invalidSizes.join(', ')}. Chỉ cho phép A-F`,
+      });
+    }
+
+    // Normalize sizes to uppercase
+    workItemData.sizes = workItemData.sizes.map(s => s.toUpperCase());
+
+    // Validate other required fields
+    if (!workItemData.difficultyLevel || workItemData.pricePerWeld === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Difficulty level and price per weld are required',
       });
     }
 
@@ -89,12 +139,20 @@ export const createWorkItem = async (req: Request, res: Response) => {
       });
     }
 
-    const workItem = await workItemModel.createWorkItem(workItemData);
+    // Optional: Normalize empty strings
+    if (workItemData.description !== undefined && workItemData.description.trim() === '') {
+      workItemData.description = undefined;
+    }
+    if (workItemData.shape !== undefined && workItemData.shape.trim() === '') {
+      workItemData.shape = undefined;
+    }
+
+    const workItems = await workItemModel.createWorkItem(workItemData);
 
     return res.status(201).json({
       success: true,
-      data: workItem,
-      message: 'Work item created successfully',
+      data: workItems,
+      message: `Đã tạo ${workItems.length} sản phẩm thành công`,
     });
   } catch (error: any) {
     console.error('Error creating work item:', error);

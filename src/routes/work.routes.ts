@@ -22,6 +22,7 @@ router.delete('/types/:id', requireAdmin, workTypeController.deleteWorkType);
 
 // Work Items routes
 router.get('/items', requireEmployee, workItemController.getAllWorkItems); // Employee can read
+router.get('/items/sequences/:year/:month', requireEmployee, workItemController.getSequencesInMonth); // Get sequences in month
 router.get('/items/:id', requireEmployee, workItemController.getWorkItemById); // Employee can read
 router.post('/items', requireAdmin, workItemController.createWorkItem);
 router.put('/items/:id', requireAdmin, workItemController.updateWorkItem);

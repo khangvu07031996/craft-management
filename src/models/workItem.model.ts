@@ -26,6 +26,10 @@ class WorkItemModel {
     return {
       id: row.id,
       name: row.name,
+      productCode: row.product_code || undefined,
+      size: row.size || undefined,
+      shape: row.shape || undefined,
+      description: row.description || undefined,
       difficultyLevel: row.difficulty_level,
       pricePerWeld: parseFloat(row.price_per_weld),
       totalQuantity: parseInt(row.total_quantity || 0),
@@ -36,6 +40,112 @@ class WorkItemModel {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
+  }
+
+  private async getNextSequenceNumber(year: number, month: number): Promise<number> {
+    // Query to get max STT in the month (format: YYMM%)
+    const query = `
+      SELECT product_code 
+      FROM work_items 
+      WHERE product_code LIKE $1 AND product_code IS NOT NULL
+      ORDER BY product_code DESC 
+      LIMIT 1
+    `;
+    
+    const prefix = `${year.toString().slice(-2)}${month.toString().padStart(2, '0')}`;
+    const pattern = `${prefix}%`;
+    const result = await pool.query(query, [pattern]);
+    
+    if (result.rows.length === 0) {
+      return 1; // First product of the month
+    }
+    
+    // Parse: 260105A -> extract sequence number (5)
+    // Remove YYMM (4 chars) and last char (size) -> get middle number
+    const lastCode = result.rows[0].product_code;
+    const withoutPrefix = lastCode.substring(4); // Remove YYMM
+    const sequenceStr = withoutPrefix.substring(0, withoutPrefix.length - 1); // Remove size letter
+    const lastSeq = parseInt(sequenceStr);
+    
+    return lastSeq + 1;
+  }
+
+  private generateProductCode(year: number, month: number, sequence: number, size: string): string {
+    const yy = year.toString().slice(-2);
+    const mm = month.toString().padStart(2, '0');
+    return `${yy}${mm}${sequence}${size}`;
+  }
+
+  private generateName(productCode: string, description?: string, shape?: string): string {
+    // Smart concatenation - only include non-empty parts
+    const nameParts = ['Mã:', productCode];
+    if (description && description.trim()) {
+      nameParts.push(description.trim());
+    }
+    if (shape && shape.trim()) {
+      nameParts.push(shape);
+    }
+    return nameParts.join(' ');
+  }
+
+  async getSequencesInMonth(year: number, month: number): Promise<Array<{
+    sequence: number;
+    sizes: string[];
+    productCodes: string[];
+    description?: string;
+    shape?: string;
+  }>> {
+    const prefix = `${year.toString().slice(-2)}${month.toString().padStart(2, '0')}`;
+    const pattern = `${prefix}%`;
+    
+    const query = `
+      SELECT product_code, size, description, shape
+      FROM work_items
+      WHERE product_code LIKE $1 AND product_code IS NOT NULL
+      ORDER BY product_code DESC
+    `;
+    
+    const result = await pool.query(query, [pattern]);
+    
+    // Group by sequence number
+    const sequenceMap = new Map<number, { 
+      sizes: string[]; 
+      productCodes: string[];
+      descriptions: Set<string>;
+      shapes: Set<string>;
+    }>();
+    
+    result.rows.forEach(row => {
+      const code = row.product_code;
+      const withoutPrefix = code.substring(4);
+      const seqStr = withoutPrefix.substring(0, withoutPrefix.length - 1);
+      const seq = parseInt(seqStr);
+      
+      if (!sequenceMap.has(seq)) {
+        sequenceMap.set(seq, { 
+          sizes: [], 
+          productCodes: [], 
+          descriptions: new Set(), 
+          shapes: new Set() 
+        });
+      }
+      
+      const data = sequenceMap.get(seq)!;
+      data.sizes.push(row.size);
+      data.productCodes.push(code);
+      if (row.description) data.descriptions.add(row.description);
+      if (row.shape) data.shapes.add(row.shape);
+    });
+    
+    return Array.from(sequenceMap.entries())
+      .map(([seq, data]) => ({
+        sequence: seq,
+        sizes: data.sizes,
+        productCodes: data.productCodes,
+        description: Array.from(data.descriptions)[0], // First item's description
+        shape: Array.from(data.shapes)[0] // First item's shape
+      }))
+      .sort((a, b) => b.sequence - a.sequence); // Sort DESC (newest first)
   }
 
   async getAllWorkItems(difficultyLevel?: string): Promise<WorkItemResponse[]> {
@@ -91,19 +201,50 @@ class WorkItemModel {
     }
   }
 
-  async createWorkItem(workItemData: CreateWorkItemDto): Promise<WorkItemResponse> {
-    const { name, difficultyLevel, pricePerWeld, totalQuantity, weldsPerItem, estimatedDeliveryDate, weight } = workItemData;
+  async createWorkItem(workItemData: CreateWorkItemDto): Promise<WorkItemResponse[]> {
+    const { description, shape, sizes, existingSequence, difficultyLevel, pricePerWeld, totalQuantity, weldsPerItem, estimatedDeliveryDate, weight } = workItemData;
 
-    const result = await pool.query(
-      `INSERT INTO work_items (name, difficulty_level, price_per_weld, total_quantity, welds_per_item, status, estimated_delivery_date, weight_kg)
-       VALUES ($1, $2, $3, $4, $5, 'Tạo mới', $6, $7)
-       RETURNING *, TO_CHAR(estimated_delivery_date, 'YYYY-MM-DD') as estimated_delivery_date_str`,
-      [name, difficultyLevel, pricePerWeld, totalQuantity, weldsPerItem, estimatedDeliveryDate || null, weight !== undefined ? weight : null]
-    );
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    
+    const createdItems: WorkItemResponse[] = [];
+    // Use provided sequence or get next new one
+    const sequence = existingSequence || await this.getNextSequenceNumber(year, month);
+    
+    // Loop through each selected size and create a work item
+    // All sizes share the same STT, only differ by size letter
+    for (const size of sizes) {
+      const productCode = this.generateProductCode(year, month, sequence, size);
+      const name = this.generateName(productCode, description, shape);
+      
+      const result = await pool.query(
+        `INSERT INTO work_items (name, product_code, size, shape, description, difficulty_level, price_per_weld, total_quantity, welds_per_item, status, estimated_delivery_date, weight_kg)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'Tạo mới', $10, $11)
+         RETURNING *, TO_CHAR(estimated_delivery_date, 'YYYY-MM-DD') as estimated_delivery_date_str`,
+        [
+          name, 
+          productCode, 
+          size, 
+          shape || null, 
+          description || null, 
+          difficultyLevel, 
+          pricePerWeld, 
+          totalQuantity, 
+          weldsPerItem, 
+          estimatedDeliveryDate || null, 
+          weight !== undefined ? weight : null
+        ]
+      );
 
-    const workItem = this.mapToWorkItemResponse(result.rows[0]);
-    // New work item has 0 quantity made
-    return { ...workItem, quantityMade: 0 };
+      const workItem = this.mapToWorkItemResponse(result.rows[0]);
+      // New work item has 0 quantity made
+      createdItems.push({ ...workItem, quantityMade: 0 });
+      
+      // DO NOT increment sequence - all sizes share same STT
+    }
+    
+    return createdItems;
   }
 
   async updateWorkItem(id: string, workItemData: UpdateWorkItemDto): Promise<WorkItemResponse | null> {
@@ -111,11 +252,25 @@ class WorkItemModel {
     const values: any[] = [];
     let paramCount = 1;
 
-    if (workItemData.name !== undefined) {
-      updates.push(`name = $${paramCount}`);
-      values.push(workItemData.name);
+    // Check if we need to regenerate name (when description or shape changes)
+    let needsNameRegeneration = false;
+    
+    if (workItemData.description !== undefined) {
+      updates.push(`description = $${paramCount}`);
+      values.push(workItemData.description || null);
       paramCount++;
+      needsNameRegeneration = true;
     }
+
+    if (workItemData.shape !== undefined) {
+      updates.push(`shape = $${paramCount}`);
+      values.push(workItemData.shape || null);
+      paramCount++;
+      needsNameRegeneration = true;
+    }
+
+    // Note: name is NOT directly updatable
+    // It will be regenerated after description/shape update
 
     if (workItemData.difficultyLevel !== undefined) {
       updates.push(`difficulty_level = $${paramCount}`);
@@ -177,7 +332,23 @@ class WorkItemModel {
       return null;
     }
 
-    const workItem = this.mapToWorkItemResponse(result.rows[0]);
+    let workItem = this.mapToWorkItemResponse(result.rows[0]);
+    
+    // Regenerate name if description or shape was updated
+    if (needsNameRegeneration && workItem.productCode) {
+      const newName = this.generateName(
+        workItem.productCode,
+        workItem.description,
+        workItem.shape
+      );
+      
+      await pool.query(
+        'UPDATE work_items SET name = $1 WHERE id = $2',
+        [newName, id]
+      );
+      
+      workItem = { ...workItem, name: newName };
+    }
     
     // Calculate quantityMade
     try {
