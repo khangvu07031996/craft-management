@@ -59,7 +59,7 @@ class WorkRecordModel {
     pageSize: number = 10,
     userRole?: string,
     userEmployeeId?: string
-  ): Promise<{ workRecords: WorkRecordResponse[]; total: number }> {
+  ): Promise<{ workRecords: WorkRecordResponse[]; total: number; statistics: { totalAmount: number; workDays: number; recordCount: number } }> {
     const conditions: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
@@ -76,23 +76,15 @@ class WorkRecordModel {
     }
 
     // Handle date filtering
-    console.log('WorkRecordModel.getAllWorkRecords - Date filters:', {
-      dateFrom: filters.dateFrom,
-      dateTo: filters.dateTo,
-      areEqual: filters.dateFrom === filters.dateTo,
-    });
-
     if (filters.dateFrom && filters.dateTo) {
       // If dateFrom equals dateTo, filter for exact date
       if (filters.dateFrom === filters.dateTo) {
-        console.log('WorkRecordModel - Using exact date filter:', filters.dateFrom);
         // work_date is already DATE type, so we can compare directly
         conditions.push(`wr.work_date = $${paramCount}::date`);
         values.push(filters.dateFrom);
         paramCount++;
       } else {
         // Date range filter
-        console.log('WorkRecordModel - Using date range filter:', filters.dateFrom, 'to', filters.dateTo);
         conditions.push(`wr.work_date >= $${paramCount}::date`);
         values.push(filters.dateFrom);
         paramCount++;
@@ -102,18 +94,14 @@ class WorkRecordModel {
       }
     } else if (filters.dateFrom) {
       // Only dateFrom specified
-      console.log('WorkRecordModel - Using dateFrom filter:', filters.dateFrom);
       conditions.push(`wr.work_date >= $${paramCount}::date`);
       values.push(filters.dateFrom);
       paramCount++;
     } else if (filters.dateTo) {
       // Only dateTo specified
-      console.log('WorkRecordModel - Using dateTo filter:', filters.dateTo);
       conditions.push(`wr.work_date <= $${paramCount}::date`);
       values.push(filters.dateTo);
       paramCount++;
-    } else {
-      console.log('WorkRecordModel - No date filters applied');
     }
 
     if (filters.workTypeId) {
@@ -130,17 +118,23 @@ class WorkRecordModel {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // Count total - use separate values array
-    const countQuery = `
-      SELECT COUNT(*) as total
+    // Count total and calculate statistics - use separate values array
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as total,
+        COALESCE(SUM(total_amount), 0) as total_amount,
+        COUNT(DISTINCT work_date) as work_days,
+        COUNT(*) as record_count
       FROM work_records wr
       ${whereClause}
     `;
-    console.log('WorkRecordModel - Count query:', countQuery);
-    console.log('WorkRecordModel - Count values:', values);
-    const countResult = await pool.query(countQuery, values);
-    const total = parseInt(countResult.rows[0].total);
-    console.log('WorkRecordModel - Total count:', total);
+    const statsResult = await pool.query(statsQuery, values);
+    const total = parseInt(statsResult.rows[0].total);
+    const statistics = {
+      totalAmount: parseFloat(statsResult.rows[0].total_amount),
+      workDays: parseInt(statsResult.rows[0].work_days),
+      recordCount: parseInt(statsResult.rows[0].record_count),
+    };
 
     // Get records with pagination - add pagination params
     const offset = (page - 1) * pageSize;
@@ -171,13 +165,10 @@ class WorkRecordModel {
       LIMIT $${limitParam} OFFSET $${offsetParam}
     `;
 
-    console.log('WorkRecordModel - Data query:', query);
-    console.log('WorkRecordModel - Data values:', dataValues);
     const result = await pool.query(query, dataValues);
-    console.log('WorkRecordModel - Result rows:', result.rows.length);
     const workRecords = result.rows.map((row) => this.mapToWorkRecordResponse(row));
 
-    return { workRecords, total };
+    return { workRecords, total, statistics };
   }
 
   async getWorkRecordById(id: string): Promise<WorkRecordResponse | null> {

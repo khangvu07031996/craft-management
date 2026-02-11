@@ -29,11 +29,6 @@ export const getAllWorkRecords = async (req: Request, res: Response) => {
       status: status as string | undefined,
     };
 
-    // Debug logging
-    console.log('WorkRecordController.getAllWorkRecords - Query params:', req.query);
-    console.log('WorkRecordController.getAllWorkRecords - Filters:', filters);
-    console.log('WorkRecordController.getAllWorkRecords - User role:', userRole, 'Employee ID:', userEmployeeId);
-
     const result = await workRecordModel.getAllWorkRecords(
       filters,
       parseInt(page as string),
@@ -41,8 +36,6 @@ export const getAllWorkRecords = async (req: Request, res: Response) => {
       userRole,
       userEmployeeId
     );
-
-    console.log('WorkRecordController.getAllWorkRecords - Result count:', result.workRecords.length);
 
     return res.json({
       success: true,
@@ -53,6 +46,7 @@ export const getAllWorkRecords = async (req: Request, res: Response) => {
         total: result.total,
         totalPages: Math.ceil(result.total / parseInt(page_size as string)),
       },
+      statistics: result.statistics,
     });
   } catch (error: any) {
     console.error('Error fetching work records:', error);
