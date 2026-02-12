@@ -27,6 +27,7 @@ class WorkRecordModel {
         id: row.work_item_id,
         name: row.work_item_name,
         difficultyLevel: row.work_item_difficulty_level,
+        weldsPerItem: row.work_item_welds_per_item != null ? parseInt(row.work_item_welds_per_item) : undefined,
       } : undefined,
       quantity: parseFloat(row.quantity),
       unitPrice: parseFloat(row.unit_price),
@@ -153,6 +154,7 @@ class WorkRecordModel {
         wt.calculation_type as work_type_calculation_type,
         wi.name as work_item_name,
         wi.difficulty_level as work_item_difficulty_level,
+        wi.welds_per_item as work_item_welds_per_item,
         u.first_name as created_by_first_name,
         u.last_name as created_by_last_name
       FROM work_records wr
@@ -182,6 +184,7 @@ class WorkRecordModel {
         wt.calculation_type as work_type_calculation_type,
         wi.name as work_item_name,
         wi.difficulty_level as work_item_difficulty_level,
+        wi.welds_per_item as work_item_welds_per_item,
         u.first_name as created_by_first_name,
         u.last_name as created_by_last_name
       FROM work_records wr
@@ -556,6 +559,40 @@ class WorkRecordModel {
     return deleted;
   }
 
+  async getWorkRecordsByEmployeeAndDateRange(
+    employeeId: string,
+    dateFrom: string,
+    dateTo: string
+  ): Promise<WorkRecordResponse[]> {
+    const query = `
+      SELECT 
+        wr.*,
+        e.first_name as employee_first_name,
+        e.last_name as employee_last_name,
+        e.employee_id as employee_employee_id,
+        wt.name as work_type_name,
+        wt.calculation_type as work_type_calculation_type,
+        wi.name as work_item_name,
+        wi.difficulty_level as work_item_difficulty_level,
+        wi.welds_per_item as work_item_welds_per_item,
+        u.first_name as created_by_first_name,
+        u.last_name as created_by_last_name
+      FROM work_records wr
+      LEFT JOIN employees e ON wr.employee_id = e.id
+      LEFT JOIN work_types wt ON wr.work_type_id = wt.id
+      LEFT JOIN work_items wi ON wr.work_item_id = wi.id
+      LEFT JOIN users u ON wr.created_by = u.id
+      WHERE wr.employee_id = $1 
+        AND wr.work_date >= $2::date
+        AND wr.work_date <= $3::date
+        AND wr.status = 'Tạo mới'
+      ORDER BY wr.work_date DESC
+    `;
+
+    const result = await pool.query(query, [employeeId, dateFrom, dateTo]);
+    return result.rows.map((row) => this.mapToWorkRecordResponse(row));
+  }
+
   async getWorkRecordsByEmployeeAndMonth(
     employeeId: string,
     year: number,
@@ -571,6 +608,7 @@ class WorkRecordModel {
         wt.calculation_type as work_type_calculation_type,
         wi.name as work_item_name,
         wi.difficulty_level as work_item_difficulty_level,
+        wi.welds_per_item as work_item_welds_per_item,
         u.first_name as created_by_first_name,
         u.last_name as created_by_last_name
       FROM work_records wr
@@ -603,6 +641,7 @@ class WorkRecordModel {
         wt.calculation_type as work_type_calculation_type,
         wi.name as work_item_name,
         wi.difficulty_level as work_item_difficulty_level,
+        wi.welds_per_item as work_item_welds_per_item,
         u.first_name as created_by_first_name,
         u.last_name as created_by_last_name
       FROM work_records wr
@@ -742,6 +781,7 @@ class WorkRecordModel {
         wt.calculation_type as work_type_calculation_type,
         wi.name as work_item_name,
         wi.difficulty_level as work_item_difficulty_level,
+        wi.welds_per_item as work_item_welds_per_item,
         u.first_name as created_by_first_name,
         u.last_name as created_by_last_name
       FROM work_records wr

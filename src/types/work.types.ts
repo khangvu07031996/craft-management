@@ -79,6 +79,7 @@ export interface WorkRecordResponse {
     id: string;
     name: string;
     difficultyLevel: string;
+    weldsPerItem?: number;
   };
   quantity: number;
   unitPrice: number;
@@ -138,9 +139,12 @@ export interface MonthlySalaryResponse {
   };
   year: number;
   month: number;
+  dateFrom?: string;
+  dateTo?: string;
   totalWorkDays: number;
   totalAmount: number;
   allowances?: number;
+  advancePayment?: number;
   status: 'Tạm tính' | 'Thanh toán';
   paidAt?: string | null;
   calculatedAt?: string | null;
@@ -150,8 +154,8 @@ export interface MonthlySalaryResponse {
 
 export interface CalculateMonthlySalaryDto {
   employeeId: string;
-  year?: number;  // Optional - auto-detect from work records
-  month?: number; // Optional - auto-detect from work records
+  dateFrom: string;
+  dateTo: string;
 }
 
 // Work Report Types

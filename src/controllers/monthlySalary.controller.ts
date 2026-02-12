@@ -6,12 +6,14 @@ import { EmployeeStatus } from '../types/employee.types';
 
 export const getAllMonthlySalaries = async (req: Request, res: Response) => {
   try {
-    const { employee_id, year, month, page = '1', page_size = '10' } = req.query;
+    const { employee_id, year, month, date_from, date_to, page = '1', page_size = '10' } = req.query;
 
     const filters = {
       employeeId: employee_id as string | undefined,
       year: year ? parseInt(year as string) : undefined,
       month: month ? parseInt(month as string) : undefined,
+      dateFrom: date_from as string | undefined,
+      dateTo: date_to as string | undefined,
     };
 
     const result = await monthlySalaryModel.getAllMonthlySalaries(
@@ -77,11 +79,25 @@ export const calculateMonthlySalary = async (req: Request, res: Response) => {
       });
     }
 
-    // Year and month are optional - will be auto-detected from work records
-    if (data.month !== undefined && (data.month < 1 || data.month > 12)) {
+    if (!data.dateFrom || !data.dateTo) {
       return res.status(400).json({
         success: false,
-        message: 'Month must be between 1 and 12',
+        message: 'dateFrom and dateTo are required',
+      });
+    }
+
+    const fromDate = new Date(data.dateFrom);
+    const toDate = new Date(data.dateTo);
+    if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'dateFrom and dateTo must be valid dates',
+      });
+    }
+    if (fromDate > toDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'dateFrom must be before or equal to dateTo',
       });
     }
 
@@ -124,6 +140,28 @@ export const updateMonthlySalaryStatus = async (req: Request, res: Response) => 
     return res.status(500).json({
       success: false,
       message: 'Failed to update monthly salary',
+      error: error.message,
+    });
+  }
+};
+
+export const updateAdvancePayment = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { advancePayment } = req.body;
+    if (advancePayment === undefined || advancePayment === null || Number(advancePayment) < 0) {
+      return res.status(400).json({ success: false, message: 'advancePayment must be >= 0' });
+    }
+    const updated = await monthlySalaryModel.updateAdvancePayment(id, Number(advancePayment));
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Monthly salary not found' });
+    }
+    return res.json({ success: true, data: updated, message: 'Tạm ứng đã cập nhật' });
+  } catch (error: any) {
+    console.error('Error updating monthly salary advance payment:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update advance payment',
       error: error.message,
     });
   }
@@ -174,19 +212,27 @@ export const deleteMonthlySalary = async (req: Request, res: Response) => {
 
 export const calculateMonthlySalaryForAll = async (req: Request, res: Response) => {
   try {
-    const { year, month } = req.body;
+    const { dateFrom, dateTo } = req.body;
 
-    if (!year || !month) {
+    if (!dateFrom || !dateTo) {
       return res.status(400).json({
         success: false,
-        message: 'Year and month are required',
+        message: 'dateFrom and dateTo are required',
       });
     }
 
-    if (month < 1 || month > 12) {
+    const fromDate = new Date(dateFrom);
+    const toDate = new Date(dateTo);
+    if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
       return res.status(400).json({
         success: false,
-        message: 'Month must be between 1 and 12',
+        message: 'dateFrom and dateTo must be valid dates',
+      });
+    }
+    if (fromDate > toDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'dateFrom must be before or equal to dateTo',
       });
     }
 
@@ -213,8 +259,8 @@ export const calculateMonthlySalaryForAll = async (req: Request, res: Response) 
       try {
         await monthlySalaryModel.calculateAndSaveMonthlySalary({
           employeeId: employee.id,
-          year,
-          month,
+          dateFrom,
+          dateTo,
         });
         results.push({
           employeeId: employee.id,

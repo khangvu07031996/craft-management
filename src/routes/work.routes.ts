@@ -44,8 +44,9 @@ router.get('/monthly-salaries', requireAdmin, monthlySalaryController.getAllMont
 router.get('/monthly-salaries/:id', requireAdmin, monthlySalaryController.getMonthlySalaryById);
 router.post('/calculate-monthly', requireAdmin, monthlySalaryController.calculateMonthlySalary);
 router.post('/calculate-monthly-all', requireAdmin, monthlySalaryController.calculateMonthlySalaryForAll);
-// Update allowances
+// Update allowances and advance payment
 router.put('/monthly-salaries/:id/allowances', requireAdmin, monthlySalaryController.updateMonthlySalaryStatus);
+router.put('/monthly-salaries/:id/advance-payment', requireAdmin, monthlySalaryController.updateAdvancePayment);
 // Pay and Delete
 router.post('/monthly-salaries/:id/pay', requireAdmin, monthlySalaryController.payMonthlySalary);
 router.delete('/monthly-salaries/:id', requireAdmin, monthlySalaryController.deleteMonthlySalary);

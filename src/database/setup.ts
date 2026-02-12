@@ -162,6 +162,36 @@ export async function setupDatabase(): Promise<void> {
         console.warn('⚠️ Product code migration warning:', error.message);
       }
     }
+
+    // Add date_from and date_to to monthly_salaries for salary by date range
+    try {
+      const dateRangeMigration = fs.readFileSync(
+        path.join(__dirname, 'add_date_range_to_monthly_salaries.sql'),
+        'utf-8'
+      );
+      await pool.query(dateRangeMigration);
+      console.log('✅ Date range columns migration for monthly_salaries completed');
+    } catch (error: any) {
+      // Migration might already be applied, that's okay
+      if (!error.message.includes('already exists') && !error.message.includes('duplicate') && !error.message.includes('column')) {
+        console.warn('⚠️ Date range migration warning:', error.message);
+      }
+    }
+
+    // Add advance_payment to monthly_salaries
+    try {
+      const advancePaymentMigration = fs.readFileSync(
+        path.join(__dirname, 'add_advance_payment_to_monthly_salaries.sql'),
+        'utf-8'
+      );
+      await pool.query(advancePaymentMigration);
+      console.log('✅ Advance payment column migration for monthly_salaries completed');
+    } catch (error: any) {
+      // Migration might already be applied, that's okay
+      if (!error.message.includes('already exists') && !error.message.includes('duplicate') && !error.message.includes('column')) {
+        console.warn('⚠️ Advance payment migration warning:', error.message);
+      }
+    }
     
     console.log('✅ Database setup completed successfully');
   } catch (error) {

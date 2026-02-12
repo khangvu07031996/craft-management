@@ -55,9 +55,12 @@ class MonthlySalaryModel {
       } : undefined,
       year: row.year,
       month: row.month,
+      dateFrom: row.date_from ? (typeof row.date_from === 'string' ? row.date_from : row.date_from.toISOString().split('T')[0]) : undefined,
+      dateTo: row.date_to ? (typeof row.date_to === 'string' ? row.date_to : row.date_to.toISOString().split('T')[0]) : undefined,
       totalWorkDays: row.total_work_days,
       totalAmount: parseFloat(row.total_amount),
       allowances: row.allowances !== undefined && row.allowances !== null ? parseFloat(row.allowances) : 0,
+      advancePayment: row.advance_payment !== undefined && row.advance_payment !== null ? parseFloat(row.advance_payment) : 0,
       status: (row.status || 'Tạm tính') as 'Tạm tính' | 'Thanh toán',
       paidAt: row.paid_at ? this.formatTimestampToUTC(row.paid_at) : null,
       calculatedAt: row.calculated_at ? this.formatTimestampToUTC(row.calculated_at) : null,
@@ -71,6 +74,8 @@ class MonthlySalaryModel {
       employeeId?: string;
       year?: number;
       month?: number;
+      dateFrom?: string;
+      dateTo?: string;
     },
     page: number = 1,
     pageSize: number = 10
@@ -95,6 +100,19 @@ class MonthlySalaryModel {
       conditions.push(`ms.month = $${paramCount}`);
       values.push(filters.month);
       paramCount++;
+    }
+
+    // When filtering by date range: match new records (date_from/date_to) or old records (year/month from dateFrom)
+    if (filters.dateFrom && filters.dateTo) {
+      const dateFromObj = new Date(filters.dateFrom);
+      const yearFromDate = dateFromObj.getFullYear();
+      const monthFromDate = dateFromObj.getMonth() + 1;
+      conditions.push(`(
+        (ms.date_from = $${paramCount}::date AND ms.date_to = $${paramCount + 1}::date)
+        OR (ms.date_from IS NULL AND ms.date_to IS NULL AND ms.year = $${paramCount + 2} AND ms.month = $${paramCount + 3})
+      )`);
+      values.push(filters.dateFrom, filters.dateTo, yearFromDate, monthFromDate);
+      paramCount += 4;
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -178,73 +196,13 @@ class MonthlySalaryModel {
   }
 
   async calculateAndSaveMonthlySalary(data: CalculateMonthlySalaryDto): Promise<MonthlySalaryResponse> {
-    const { employeeId, year, month } = data;
+    const { employeeId, dateFrom, dateTo } = data;
 
-    let workRecords: any[];
-    let finalYear: number;
-    let finalMonth: number;
-
-    // If year and month are provided, use them
-    if (year && month) {
-      workRecords = await workRecordModel.getWorkRecordsByEmployeeAndMonth(
-        employeeId,
-        year,
-        month
-      );
-      finalYear = year;
-      finalMonth = month;
-    } else {
-      // Auto-detect: get all work records with status "Tạo mới"
-      workRecords = await workRecordModel.getWorkRecordsByEmployeeWithStatus(
-        employeeId,
-        'Tạo mới'
-      );
-
-      if (workRecords.length === 0) {
-        const employee = await employeeModel.getEmployeeById(employeeId);
-        if (!employee) {
-          throw new Error('Không tìm thấy nhân viên');
-        }
-        throw new Error(`Nhân viên ${employee.firstName} ${employee.lastName} không có bản ghi công việc nào ở trạng thái "Tạo mới" để tính lương`);
-      }
-
-      // Get date range from work records to determine year/month
-      const recordIds = workRecords.map(r => r.id);
-      const dateRange = await workRecordModel.getWorkRecordDateRange(recordIds);
-      
-      if (!dateRange) {
-        throw new Error('Không thể xác định ngày từ bản ghi công việc');
-      }
-
-      // Use the month with the most work records, or the latest month
-      // Group by year/month and find the one with most records
-      const monthCounts: Record<string, number> = {};
-      workRecords.forEach(record => {
-        const recordDate = new Date(record.workDate);
-        const key = `${recordDate.getFullYear()}-${recordDate.getMonth() + 1}`;
-        monthCounts[key] = (monthCounts[key] || 0) + 1;
-      });
-
-      // Find month with most records, or use the latest date
-      let maxCount = 0;
-      let selectedKey = '';
-      for (const [key, count] of Object.entries(monthCounts)) {
-        if (count > maxCount) {
-          maxCount = count;
-          selectedKey = key;
-        }
-      }
-
-      // If no clear winner, use the latest date
-      if (!selectedKey) {
-        finalYear = dateRange.maxDate.getFullYear();
-        finalMonth = dateRange.maxDate.getMonth() + 1;
-      } else {
-        const [y, m] = selectedKey.split('-').map(Number);
-        finalYear = y;
-        finalMonth = m;
-      }
-    }
+    const workRecords = await workRecordModel.getWorkRecordsByEmployeeAndDateRange(
+      employeeId,
+      dateFrom,
+      dateTo
+    );
 
     // If no work records, throw error (no default salary)
     if (workRecords.length === 0) {
@@ -252,8 +210,13 @@ class MonthlySalaryModel {
       if (!employee) {
         throw new Error('Không tìm thấy nhân viên');
       }
-      throw new Error(`Nhân viên ${employee.firstName} ${employee.lastName} không có bản ghi công việc nào ở trạng thái "Tạo mới" để tính lương`);
+      throw new Error(`Nhân viên ${employee.firstName} ${employee.lastName} không có bản ghi công việc nào ở trạng thái "Tạo mới" trong khoảng ngày ${dateFrom} - ${dateTo} để tính lương`);
     }
+
+    // Get year and month from date_from for sort purposes
+    const dateFromObj = new Date(dateFrom);
+    const finalYear = dateFromObj.getFullYear();
+    const finalMonth = dateFromObj.getMonth() + 1;
 
     // Calculate total amount from work records
     const totalAmount = workRecords.reduce((sum, record) => sum + record.totalAmount, 0);
@@ -271,25 +234,30 @@ class MonthlySalaryModel {
     );
     const totalWorkDays = parseInt(uniqueDaysQuery.rows[0].unique_days) || 0;
 
-    // Check if there's already a "Tạm tính" salary for this employee and month/year
+    // Check if there's already a "Tạm tính" salary for this employee and date range
     const existingTemporarySalaries = await this.getAllTemporarySalariesByEmployee(
       employeeId,
-      finalYear,
-      finalMonth
+      undefined,
+      undefined,
+      dateFrom,
+      dateTo
     );
     if (existingTemporarySalaries.length > 0) {
       throw new Error(
-        `Nhân viên này đã có bảng lương tạm tính cho tháng ${finalMonth}/${finalYear}. Vui lòng xóa bảng lương cũ trước khi tính lại.`
+        `Nhân viên này đã có bảng lương tạm tính cho khoảng ngày ${dateFrom} - ${dateTo}. Vui lòng xóa bảng lương cũ trước khi tính lại.`
       );
     }
+
+    // Default allowances: totalWorkDays × 10,000đ (user can edit)
+    const defaultAllowances = totalWorkDays * 10000;
 
     // Always create new record (no checking for existing since UNIQUE constraint is removed)
     const result = await pool.query(
       `INSERT INTO monthly_salaries (
-        employee_id, year, month, total_work_days, total_amount, status, calculated_at
-      ) VALUES ($1, $2, $3, $4, $5, 'Tạm tính', NOW())
+        employee_id, year, month, date_from, date_to, total_work_days, total_amount, allowances, advance_payment, status, calculated_at
+      ) VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, 0, 'Tạm tính', NOW())
       RETURNING *`,
-      [employeeId, finalYear, finalMonth, totalWorkDays, totalAmount]
+      [employeeId, finalYear, finalMonth, dateFrom, dateTo, totalWorkDays, totalAmount, defaultAllowances]
     );
     
     const monthlySalaryId = result.rows[0].id;
@@ -320,10 +288,24 @@ class MonthlySalaryModel {
     return this.getMonthlySalaryById(id);
   }
 
+  async updateAdvancePayment(id: string, advancePayment: number): Promise<MonthlySalaryResponse | null> {
+    const result = await pool.query(
+      `UPDATE monthly_salaries
+       SET advance_payment = $1
+       WHERE id = $2
+       RETURNING *`,
+      [advancePayment, id]
+    );
+    if (result.rows.length === 0) return null;
+    return this.getMonthlySalaryById(id);
+  }
+
   async getAllTemporarySalariesByEmployee(
     employeeId: string,
     year?: number,
-    month?: number
+    month?: number,
+    dateFrom?: string,
+    dateTo?: string
   ): Promise<MonthlySalaryResponse[]> {
     const conditions: string[] = ['ms.employee_id = $1', "ms.status = 'Tạm tính'"];
     const values: any[] = [employeeId];
@@ -338,6 +320,18 @@ class MonthlySalaryModel {
     if (month !== undefined) {
       conditions.push(`ms.month = $${paramCount}`);
       values.push(month);
+      paramCount++;
+    }
+
+    if (dateFrom !== undefined) {
+      conditions.push(`ms.date_from = $${paramCount}::date`);
+      values.push(dateFrom);
+      paramCount++;
+    }
+
+    if (dateTo !== undefined) {
+      conditions.push(`ms.date_to = $${paramCount}::date`);
+      values.push(dateTo);
       paramCount++;
     }
 
@@ -361,7 +355,9 @@ class MonthlySalaryModel {
   async getAllPaidSalariesByEmployee(
     employeeId: string,
     year?: number,
-    month?: number
+    month?: number,
+    dateFrom?: string,
+    dateTo?: string
   ): Promise<MonthlySalaryResponse[]> {
     const conditions: string[] = ['ms.employee_id = $1', "ms.status = 'Thanh toán'"];
     const values: any[] = [employeeId];
@@ -376,6 +372,18 @@ class MonthlySalaryModel {
     if (month !== undefined) {
       conditions.push(`ms.month = $${paramCount}`);
       values.push(month);
+      paramCount++;
+    }
+
+    if (dateFrom !== undefined) {
+      conditions.push(`ms.date_from = $${paramCount}::date`);
+      values.push(dateFrom);
+      paramCount++;
+    }
+
+    if (dateTo !== undefined) {
+      conditions.push(`ms.date_to = $${paramCount}::date`);
+      values.push(dateTo);
       paramCount++;
     }
 
@@ -416,12 +424,21 @@ class MonthlySalaryModel {
       throw new Error('Chỉ có thể thanh toán bảng lương ở trạng thái "Tạm tính"');
     }
 
-    // Get all temporary salaries for this employee in the same month (to be paid)
-    const temporarySalaries = await this.getAllTemporarySalariesByEmployee(
-      employeeId,
-      primarySalary.year,
-      primarySalary.month
-    );
+    // Get all temporary salaries for this employee in the same period (to be paid)
+    // Use date range if primary has it, otherwise use year/month for old records
+    const temporarySalaries = primarySalary.dateFrom && primarySalary.dateTo
+      ? await this.getAllTemporarySalariesByEmployee(
+          employeeId,
+          undefined,
+          undefined,
+          primarySalary.dateFrom,
+          primarySalary.dateTo
+        )
+      : await this.getAllTemporarySalariesByEmployee(
+          employeeId,
+          primarySalary.year,
+          primarySalary.month
+        );
 
     if (temporarySalaries.length === 0) {
       throw new Error('Không có bảng lương tạm tính nào để thanh toán');
@@ -433,12 +450,20 @@ class MonthlySalaryModel {
       temporarySalaries.push(primarySalary);
     }
 
-    // Get all paid salaries for this employee in the same month (to be merged)
-    const paidSalaries = await this.getAllPaidSalariesByEmployee(
-      employeeId,
-      primarySalary.year,
-      primarySalary.month
-    );
+    // Get all paid salaries for this employee in the same period (to be merged)
+    const paidSalaries = primarySalary.dateFrom && primarySalary.dateTo
+      ? await this.getAllPaidSalariesByEmployee(
+          employeeId,
+          undefined,
+          undefined,
+          primarySalary.dateFrom,
+          primarySalary.dateTo
+        )
+      : await this.getAllPaidSalariesByEmployee(
+          employeeId,
+          primarySalary.year,
+          primarySalary.month
+        );
 
     // Combine all salaries to merge (temporary + paid)
     const allSalariesToMerge = [...temporarySalaries, ...paidSalaries];
@@ -476,6 +501,7 @@ class MonthlySalaryModel {
     const totalAmount = allSalariesToMerge.reduce((sum, s) => sum + s.totalAmount + (s.allowances || 0), 0);
     const totalWorkDays = allSalariesToMerge.reduce((sum, s) => sum + s.totalWorkDays, 0);
     const totalAllowances = allSalariesToMerge.reduce((sum, s) => sum + (s.allowances || 0), 0);
+    const totalAdvancePayment = allSalariesToMerge.reduce((sum, s) => sum + (s.advancePayment || 0), 0);
 
     // Get all work record IDs from all salaries (both temporary and paid) from junction table
     const salaryIds = allSalariesToMerge.map(s => s.id);
@@ -507,21 +533,40 @@ class MonthlySalaryModel {
       [salaryIds]
     );
 
-    // Create merged salary record using primary salary's year/month
-    const result = await pool.query(
-      `INSERT INTO monthly_salaries (
-        employee_id, year, month, total_work_days, total_amount, allowances, status, calculated_at, paid_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, 'Thanh toán', NOW(), NOW())
-      RETURNING *`,
-      [
-        employeeId,
-        primarySalary.year,
-        primarySalary.month,
-        totalWorkDays,
-        totalAmount - totalAllowances, // total_amount should not include allowances
-        totalAllowances
-      ]
-    );
+    // Create merged salary record using primary salary's year/month and date range
+    const result = primarySalary.dateFrom && primarySalary.dateTo
+      ? await pool.query(
+          `INSERT INTO monthly_salaries (
+            employee_id, year, month, date_from, date_to, total_work_days, total_amount, allowances, advance_payment, status, calculated_at, paid_at
+          ) VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, 'Thanh toán', NOW(), NOW())
+          RETURNING *`,
+          [
+            employeeId,
+            primarySalary.year,
+            primarySalary.month,
+            primarySalary.dateFrom,
+            primarySalary.dateTo,
+            totalWorkDays,
+            totalAmount - totalAllowances, // total_amount should not include allowances
+            totalAllowances,
+            totalAdvancePayment
+          ]
+        )
+      : await pool.query(
+          `INSERT INTO monthly_salaries (
+            employee_id, year, month, total_work_days, total_amount, allowances, advance_payment, status, calculated_at, paid_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'Thanh toán', NOW(), NOW())
+          RETURNING *`,
+          [
+            employeeId,
+            primarySalary.year,
+            primarySalary.month,
+            totalWorkDays,
+            totalAmount - totalAllowances, // total_amount should not include allowances
+            totalAllowances,
+            totalAdvancePayment
+          ]
+        );
 
     const mergedSalaryId = result.rows[0].id;
 
