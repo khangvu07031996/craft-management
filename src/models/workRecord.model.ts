@@ -54,6 +54,7 @@ class WorkRecordModel {
       dateFrom?: string;
       dateTo?: string;
       workTypeId?: string;
+      workItemId?: string;
       status?: string;
     },
     page: number = 1,
@@ -108,6 +109,12 @@ class WorkRecordModel {
     if (filters.workTypeId) {
       conditions.push(`wr.work_type_id = $${paramCount}`);
       values.push(filters.workTypeId);
+      paramCount++;
+    }
+
+    if (filters.workItemId) {
+      conditions.push(`wr.work_item_id = $${paramCount}`);
+      values.push(filters.workItemId);
       paramCount++;
     }
 

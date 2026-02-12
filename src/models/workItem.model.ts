@@ -168,7 +168,7 @@ class WorkItemModel {
       values.push(difficultyLevel);
     }
 
-    query += ' ORDER BY difficulty_level, name';
+    query += ' ORDER BY created_at DESC';
 
     const result = await pool.query(query, values);
     const workItems = result.rows.map((row) => this.mapToWorkItemResponse(row));

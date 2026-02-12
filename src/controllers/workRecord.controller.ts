@@ -6,7 +6,7 @@ import { CreateWorkRecordDto, UpdateWorkRecordDto } from '../types/work.types';
 
 export const getAllWorkRecords = async (req: Request, res: Response) => {
   try {
-    const { employee_id, date_from, date_to, work_type_id, status, page = '1', page_size = '10' } = req.query;
+    const { employee_id, date_from, date_to, work_type_id, work_item_id, status, page = '1', page_size = '10' } = req.query;
 
     // Get user info to check role and employeeId
     const userId = req.user?.userId;
@@ -26,6 +26,7 @@ export const getAllWorkRecords = async (req: Request, res: Response) => {
       dateFrom: date_from as string | undefined,
       dateTo: date_to as string | undefined,
       workTypeId: work_type_id as string | undefined,
+      workItemId: work_item_id as string | undefined,
       status: status as string | undefined,
     };
 
