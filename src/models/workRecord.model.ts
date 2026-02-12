@@ -1,5 +1,5 @@
 import pool from '../config/database';
-import { WorkRecordResponse, CreateWorkRecordDto, UpdateWorkRecordDto } from '../types/work.types';
+import { WorkRecordResponse, CreateWorkRecordDto, UpdateWorkRecordDto, EmployeeProductAggregation } from '../types/work.types';
 import workTypeModel from './workType.model';
 import workItemModel from './workItem.model';
 import overtimeConfigModel from './overtimeConfig.model';
@@ -60,7 +60,7 @@ class WorkRecordModel {
     pageSize: number = 10,
     userRole?: string,
     userEmployeeId?: string
-  ): Promise<{ workRecords: WorkRecordResponse[]; total: number; statistics: { totalAmount: number; workDays: number; recordCount: number } }> {
+  ): Promise<{ workRecords: WorkRecordResponse[]; total: number; statistics: { totalAmount: number; workDays: number; recordCount: number }; aggregations: { byEmployeeProduct: EmployeeProductAggregation[] } }> {
     const conditions: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
@@ -170,7 +170,46 @@ class WorkRecordModel {
     const result = await pool.query(query, dataValues);
     const workRecords = result.rows.map((row) => this.mapToWorkRecordResponse(row));
 
-    return { workRecords, total, statistics };
+    // Aggregate by employee + product (same filters, only records with work_item_id)
+    const aggWhereClause = conditions.length > 0
+      ? `WHERE ${conditions.join(' AND ')} AND wr.work_item_id IS NOT NULL`
+      : 'WHERE wr.work_item_id IS NOT NULL';
+    const aggQuery = `
+      SELECT 
+        wr.employee_id as employee_id,
+        CONCAT(e.first_name, ' ', e.last_name) as employee_name,
+        wr.work_item_id as work_item_id,
+        wi.name as work_item_name,
+        wt.calculation_type as calculation_type,
+        SUM(
+          CASE 
+            WHEN wt.calculation_type = 'weld_count' THEN wr.quantity + COALESCE(wr.overtime_quantity, 0)
+            WHEN wt.calculation_type = 'hourly' THEN wr.quantity + COALESCE(wr.overtime_hours, 0)
+            ELSE wr.quantity
+          END
+        )::numeric as total_quantity,
+        MAX(wr.work_date)::text as last_work_date
+      FROM work_records wr
+      LEFT JOIN employees e ON wr.employee_id = e.id
+      LEFT JOIN work_types wt ON wr.work_type_id = wt.id
+      LEFT JOIN work_items wi ON wr.work_item_id = wi.id
+      ${aggWhereClause}
+      GROUP BY wr.employee_id, e.first_name, e.last_name, wr.work_item_id, wi.name, wt.calculation_type
+      ORDER BY employee_name, last_work_date DESC NULLS LAST
+      LIMIT 100
+    `;
+    const aggResult = await pool.query(aggQuery, values);
+    const byEmployeeProduct: EmployeeProductAggregation[] = aggResult.rows.map((row) => ({
+      employeeId: row.employee_id,
+      employeeName: row.employee_name || '',
+      workItemId: row.work_item_id,
+      workItemName: row.work_item_name || '',
+      calculationType: row.calculation_type || 'weld_count',
+      totalQuantity: parseFloat(row.total_quantity),
+      lastWorkDate: row.last_work_date || undefined,
+    }));
+
+    return { workRecords, total, statistics, aggregations: { byEmployeeProduct } };
   }
 
   async getWorkRecordById(id: string): Promise<WorkRecordResponse | null> {
@@ -796,6 +835,58 @@ class WorkRecordModel {
 
     const result = await pool.query(query, [monthlySalaryId]);
     return result.rows.map((row) => this.mapToWorkRecordResponse(row));
+  }
+
+  /**
+   * Recalculate unit_price and total_amount for work records with status 'Tạo mới'
+   * when work item's pricePerWeld or weldsPerItem changes.
+   * Only applies to weld_count records (those with work_item_id).
+   */
+  async recalculateWorkRecordsByWorkItem(workItemId: string): Promise<number> {
+    const workItem = await workItemModel.getWorkItemById(workItemId);
+    if (!workItem) {
+      return 0;
+    }
+
+    const { pricePerWeld, weldsPerItem } = workItem;
+
+    const recordsResult = await pool.query(
+      `SELECT id, quantity, overtime_quantity, is_overtime, work_type_id
+       FROM work_records
+       WHERE work_item_id = $1 AND status = 'Tạo mới'`,
+      [workItemId]
+    );
+
+    const records = recordsResult.rows;
+    let updatedCount = 0;
+
+    for (const row of records) {
+      const { id, quantity, overtime_quantity, is_overtime, work_type_id } = row;
+      const qty = parseFloat(quantity) || 0;
+      const overtimeQuantity = overtime_quantity ? parseFloat(overtime_quantity) : 0;
+
+      const unitPrice = pricePerWeld;
+      let totalAmount = qty * weldsPerItem * pricePerWeld;
+
+      if (is_overtime && overtimeQuantity > 0) {
+        const overtimeConfig = await overtimeConfigModel.getOvertimeConfigByWorkTypeId(work_type_id);
+        if (overtimeConfig && overtimeConfig.overtimePricePerWeld > 0) {
+          const overtimeAmount =
+            overtimeQuantity * weldsPerItem * (pricePerWeld + overtimeConfig.overtimePricePerWeld);
+          totalAmount += overtimeAmount;
+        }
+      }
+
+      await pool.query(
+        `UPDATE work_records
+         SET unit_price = $1, total_amount = $2, updated_at = NOW()
+         WHERE id = $3`,
+        [unitPrice, totalAmount, id]
+      );
+      updatedCount++;
+    }
+
+    return updatedCount;
   }
 }
 

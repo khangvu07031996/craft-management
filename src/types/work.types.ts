@@ -127,6 +127,16 @@ export interface UpdateWorkRecordDto {
   status?: 'Tạo mới' | 'Đã thanh toán';
 }
 
+export interface EmployeeProductAggregation {
+  employeeId: string;
+  employeeName: string;
+  workItemId: string;
+  workItemName: string;
+  calculationType: 'hourly' | 'daily' | 'weld_count';
+  totalQuantity: number;
+  lastWorkDate?: string;
+}
+
 // Monthly Salary Types
 export interface MonthlySalaryResponse {
   id: string;

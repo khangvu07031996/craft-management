@@ -411,6 +411,16 @@ class WorkItemModel {
       workItem = { ...workItem, name: newName };
     }
     
+    // Recalculate work records when price or welds change (only for status 'Tạo mới')
+    if (workItemData.pricePerWeld !== undefined || workItemData.weldsPerItem !== undefined) {
+      try {
+        const workRecordModel = (await import('./workRecord.model')).default;
+        await workRecordModel.recalculateWorkRecordsByWorkItem(id);
+      } catch (error) {
+        console.error('Error recalculating work records by work item:', error);
+      }
+    }
+
     // Calculate quantityMade
     try {
       // Lazy import to avoid circular dependency

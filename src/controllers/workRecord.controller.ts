@@ -47,6 +47,7 @@ export const getAllWorkRecords = async (req: Request, res: Response) => {
         totalPages: Math.ceil(result.total / parseInt(page_size as string)),
       },
       statistics: result.statistics,
+      aggregations: result.aggregations,
     });
   } catch (error: any) {
     console.error('Error fetching work records:', error);
