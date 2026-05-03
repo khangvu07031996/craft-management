@@ -54,6 +54,8 @@ router.delete('/monthly-salaries/:id', requireAdmin, monthlySalaryController.del
 // Reports routes (Admin only)
 router.get('/reports/weekly', requireAdmin, workReportController.getWeeklyReport);
 router.get('/reports/monthly', requireAdmin, workReportController.getMonthlyReport);
+router.get('/reports/payroll-period', requireAdmin, workReportController.getPayrollPeriodReport);
+router.get('/reports/top-performers', requireAdmin, workReportController.getTopPerformersReport);
 
 // Overtime Config routes - allow employee to read, admin to write
 router.get('/overtime-configs', requireEmployee, overtimeConfigController.getAllOvertimeConfigs);

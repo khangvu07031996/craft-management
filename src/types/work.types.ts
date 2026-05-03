@@ -186,6 +186,91 @@ export interface WorkReport {
   }>;
 }
 
+/** GET /work/reports/payroll-period — lương chỉ phiếu status Thanh toán + paid_at trong kỳ */
+export interface PayrollPeriodReportSummary {
+  paidSlipCount: number;
+  totalAmountSum: number;
+  totalAllowancesSum: number;
+  totalAdvanceSum: number;
+  totalNetPaid: number;
+}
+
+export interface PayrollPeriodPaidSalaryRow {
+  id: string;
+  employeeId: string;
+  employee?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    employeeId: string;
+  };
+  year: number;
+  month: number;
+  dateFrom?: string;
+  dateTo?: string;
+  totalWorkDays: number;
+  totalAmount: number;
+  allowances: number;
+  advancePayment: number;
+  status: 'Tạm tính' | 'Thanh toán';
+  paidAt: string;
+  netPaid: number;
+}
+
+export interface PayrollPeriodEmployeeActivityRow {
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  employeeCode: string;
+  department: string | null;
+  workDays: number;
+  /** Tổng số giờ tăng ca (loại theo giờ) */
+  overtimeHours: number;
+  /** Tổng lượng tăng ca (overtime_quantity, ví dụ SP/mối hàn tăng ca) */
+  overtimeQuantity: number;
+  /** Số loại sản phẩm (distinct work_item_id trong kỳ, bỏ bản ghi không gắn sản phẩm) */
+  productTypeCount: number;
+  totalQuantity: number;
+}
+
+export interface PayrollPeriodReport {
+  periodLabel: string;
+  dateFrom: string;
+  dateTo: string;
+  summary: PayrollPeriodReportSummary;
+  paidSalaries: PayrollPeriodPaidSalaryRow[];
+  byEmployee: PayrollPeriodEmployeeActivityRow[];
+}
+
+export type TopPerformerMetricKey =
+  | 'totalQuantity'
+  | 'totalAmount'
+  | 'productTypeCount'
+  | 'workDays'
+  | 'overtimeHours'
+  | 'overtimeQuantity'
+  | 'weekAttendanceRatio';
+
+export interface TopPerformerRankRow {
+  rank: number;
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  employeeCode: string;
+  department: string | null;
+  value: number;
+}
+
+export interface TopPerformersReport {
+  periodLabel: string;
+  dateFrom: string;
+  dateTo: string;
+  top: number;
+  weeksInPeriod: number;
+  onlyPaidEmployees: boolean;
+  rankings: Partial<Record<TopPerformerMetricKey, TopPerformerRankRow[]>>;
+}
+
 // Overtime Config Types
 export interface OvertimeConfigResponse {
   id: string;
