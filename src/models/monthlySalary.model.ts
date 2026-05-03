@@ -102,16 +102,27 @@ class MonthlySalaryModel {
       paramCount++;
     }
 
-    // When filtering by date range: match new records (date_from/date_to) or old records (year/month from dateFrom)
+    // When filtering by date range:
+    // - New records (date_from/date_to): match by overlap with selected range
+    // - Legacy records (year/month only): match months in selected range
     if (filters.dateFrom && filters.dateTo) {
       const dateFromObj = new Date(filters.dateFrom);
+      const dateToObj = new Date(filters.dateTo);
       const yearFromDate = dateFromObj.getFullYear();
       const monthFromDate = dateFromObj.getMonth() + 1;
+      const yearToDate = dateToObj.getFullYear();
+      const monthToDate = dateToObj.getMonth() + 1;
+      const fromMonthIndex = yearFromDate * 12 + monthFromDate;
+      const toMonthIndex = yearToDate * 12 + monthToDate;
       conditions.push(`(
-        (ms.date_from = $${paramCount}::date AND ms.date_to = $${paramCount + 1}::date)
-        OR (ms.date_from IS NULL AND ms.date_to IS NULL AND ms.year = $${paramCount + 2} AND ms.month = $${paramCount + 3})
+        (ms.date_from IS NOT NULL AND ms.date_to IS NOT NULL AND ms.date_from <= $${paramCount + 1}::date AND ms.date_to >= $${paramCount}::date)
+        OR (
+          ms.date_from IS NULL
+          AND ms.date_to IS NULL
+          AND (ms.year * 12 + ms.month) BETWEEN $${paramCount + 2} AND $${paramCount + 3}
+        )
       )`);
-      values.push(filters.dateFrom, filters.dateTo, yearFromDate, monthFromDate);
+      values.push(filters.dateFrom, filters.dateTo, fromMonthIndex, toMonthIndex);
       paramCount += 4;
     }
 
@@ -440,11 +451,8 @@ class MonthlySalaryModel {
           primarySalary.month
         );
 
-    if (temporarySalaries.length === 0) {
-      throw new Error('Không có bảng lương tạm tính nào để thanh toán');
-    }
-
-    // Ensure primary salary is included in the list (it should be, but double-check)
+    // Ensure primary salary is included in the list. In some legacy records,
+    // year/month or date-range filters may not return the selected salary.
     const primaryIncluded = temporarySalaries.some(s => s.id === primarySalaryId);
     if (!primaryIncluded) {
       temporarySalaries.push(primarySalary);
@@ -512,6 +520,30 @@ class MonthlySalaryModel {
     );
     const workRecordIds = junctionResult.rows.map(row => row.work_record_id);
 
+    // Derive merged period from actual linked work records to avoid stale
+    // date_from/date_to when multiple salary ranges are merged.
+    let mergedDateFrom: string | undefined = primarySalary.dateFrom;
+    let mergedDateTo: string | undefined = primarySalary.dateTo;
+    if (workRecordIds.length > 0) {
+      const dateRangeResult = await pool.query(
+        `SELECT MIN(work_date)::date as min_date, MAX(work_date)::date as max_date
+         FROM work_records
+         WHERE id = ANY($1::uuid[])`,
+        [workRecordIds]
+      );
+      const minDate = dateRangeResult.rows[0]?.min_date;
+      const maxDate = dateRangeResult.rows[0]?.max_date;
+      if (minDate && maxDate) {
+        mergedDateFrom = typeof minDate === 'string' ? minDate : minDate.toISOString().split('T')[0];
+        mergedDateTo = typeof maxDate === 'string' ? maxDate : maxDate.toISOString().split('T')[0];
+      }
+    }
+
+    // Keep year/month aligned with merged period start for sorting and grouping.
+    const mergedDateFromObj = mergedDateFrom ? new Date(mergedDateFrom) : null;
+    const mergedYear = mergedDateFromObj ? mergedDateFromObj.getFullYear() : primarySalary.year;
+    const mergedMonth = mergedDateFromObj ? mergedDateFromObj.getMonth() + 1 : primarySalary.month;
+
     // Update work records status (only for temporary salaries, paid ones already have status "Đã thanh toán")
     const temporarySalaryIds = temporarySalaries.map(s => s.id);
     if (temporarySalaryIds.length > 0) {
@@ -533,8 +565,8 @@ class MonthlySalaryModel {
       [salaryIds]
     );
 
-    // Create merged salary record using primary salary's year/month and date range
-    const result = primarySalary.dateFrom && primarySalary.dateTo
+    // Create merged salary record using merged period from actual work records
+    const result = mergedDateFrom && mergedDateTo
       ? await pool.query(
           `INSERT INTO monthly_salaries (
             employee_id, year, month, date_from, date_to, total_work_days, total_amount, allowances, advance_payment, status, calculated_at, paid_at
@@ -542,10 +574,10 @@ class MonthlySalaryModel {
           RETURNING *`,
           [
             employeeId,
-            primarySalary.year,
-            primarySalary.month,
-            primarySalary.dateFrom,
-            primarySalary.dateTo,
+            mergedYear,
+            mergedMonth,
+            mergedDateFrom,
+            mergedDateTo,
             totalWorkDays,
             totalAmount - totalAllowances, // total_amount should not include allowances
             totalAllowances,
@@ -559,8 +591,8 @@ class MonthlySalaryModel {
           RETURNING *`,
           [
             employeeId,
-            primarySalary.year,
-            primarySalary.month,
+            mergedYear,
+            mergedMonth,
             totalWorkDays,
             totalAmount - totalAllowances, // total_amount should not include allowances
             totalAllowances,
