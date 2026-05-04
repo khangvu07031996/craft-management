@@ -61,8 +61,9 @@ function compareMetricDesc(a: AggRowInternal, b: AggRowInternal, metric: TopPerf
   const va = metricValue(a, metric);
   const vb = metricValue(b, metric);
   if (vb !== va) return vb - va;
-  const na = `${a.lastName} ${a.firstName}`;
-  const nb = `${b.lastName} ${b.firstName}`;
+  /** Họ + Tên: trong DB employees, first_name = Họ, last_name = Tên (theo form nhân viên). */
+  const na = `${a.firstName} ${a.lastName}`;
+  const nb = `${b.firstName} ${b.lastName}`;
   return na.localeCompare(nb, 'vi', { sensitivity: 'base' });
 }
 
