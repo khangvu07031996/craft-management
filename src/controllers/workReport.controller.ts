@@ -66,6 +66,21 @@ function compareMetricDesc(a: AggRowInternal, b: AggRowInternal, metric: TopPerf
   return na.localeCompare(nb, 'vi', { sensitivity: 'base' });
 }
 
+const METRIC_SCORING_EPS = 1e-7;
+
+/** Có ít nhất 2 giá trị khác nhau trong kỳ — tránh “hạng 1” khi cả xưởng cùng 0 hoặc cùng một số. */
+function isMetricDiscriminative(allRows: AggRowInternal[], metric: TopPerformerMetricKey): boolean {
+  if (allRows.length <= 1) return false;
+  let minV = Infinity;
+  let maxV = -Infinity;
+  for (const r of allRows) {
+    const v = metricValue(r, metric);
+    if (v < minV) minV = v;
+    if (v > maxV) maxV = v;
+  }
+  return maxV - minV > METRIC_SCORING_EPS;
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
@@ -776,14 +791,28 @@ export const getTopPerformersReport = async (req: Request, res: Response) => {
       };
     });
 
+    const scoringEligibleByMetric: Partial<Record<TopPerformerMetricKey, boolean>> = {};
+    for (const metric of requestedMetrics) {
+      scoringEligibleByMetric[metric] = isMetricDiscriminative(rows, metric);
+    }
+
     const rankings: Partial<Record<TopPerformerMetricKey, TopPerformerRankRow[]>> = {};
 
     for (const metric of requestedMetrics) {
       const sorted = [...rows].sort((a, b) => compareMetricDesc(a, b, metric));
       const slice = sorted.slice(0, topNum);
+      let prevRank = 1;
       rankings[metric] = slice.map((r, idx) => {
+        let rank: number;
+        if (idx === 0) {
+          rank = 1;
+        } else {
+          const cmp = compareMetricDesc(slice[idx - 1], r, metric);
+          rank = cmp === 0 ? prevRank : idx + 1;
+        }
+        prevRank = rank;
         const rankRow: TopPerformerRankRow = {
-          rank: idx + 1,
+          rank,
           employeeId: r.employeeId,
           firstName: r.firstName,
           lastName: r.lastName,
@@ -808,6 +837,7 @@ export const getTopPerformersReport = async (req: Request, res: Response) => {
       weeksInPeriod,
       onlyPaidEmployees,
       rankings,
+      scoringEligibleByMetric,
     };
 
     return res.json({

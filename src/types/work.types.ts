@@ -269,6 +269,8 @@ export interface TopPerformersReport {
   weeksInPeriod: number;
   onlyPaidEmployees: boolean;
   rankings: Partial<Record<TopPerformerMetricKey, TopPerformerRankRow[]>>;
+  /** Chỉ tiêu có phân hạng thật (max > min trên toàn NV có bản ghi trong kỳ) — dùng để không cộng điểm khi cả xưởng cùng 0. */
+  scoringEligibleByMetric: Partial<Record<TopPerformerMetricKey, boolean>>;
 }
 
 // Overtime Config Types
