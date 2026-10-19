@@ -206,6 +206,99 @@ class MonthlySalaryModel {
     return this.mapToMonthlySalaryResponse(result.rows[0]);
   }
 
+  /**
+   * Find work records that are already linked to other salary slips.
+   * Used to prevent double-counting the same work record across slips.
+   */
+  private async findWorkRecordConflicts(
+    workRecordIds: string[],
+    excludeSalaryIds: string[] = []
+  ): Promise<Array<{
+    workRecordId: string;
+    workDate: string;
+    monthlySalaryId: string;
+    salaryStatus: string;
+    dateFrom: string | null;
+    dateTo: string | null;
+  }>> {
+    if (workRecordIds.length === 0) {
+      return [];
+    }
+
+    const result = await pool.query(
+      `SELECT
+         mswr.work_record_id,
+         wr.work_date::text as work_date,
+         ms.id as monthly_salary_id,
+         ms.status as salary_status,
+         ms.date_from::text as date_from,
+         ms.date_to::text as date_to
+       FROM monthly_salary_work_records mswr
+       INNER JOIN monthly_salaries ms ON ms.id = mswr.monthly_salary_id
+       INNER JOIN work_records wr ON wr.id = mswr.work_record_id
+       WHERE mswr.work_record_id = ANY($1::uuid[])
+         AND (
+           cardinality($2::uuid[]) = 0
+           OR NOT (ms.id = ANY($2::uuid[]))
+         )
+       ORDER BY wr.work_date, ms.created_at`,
+      [workRecordIds, excludeSalaryIds]
+    );
+
+    return result.rows.map((row) => ({
+      workRecordId: row.work_record_id,
+      workDate: row.work_date,
+      monthlySalaryId: row.monthly_salary_id,
+      salaryStatus: row.salary_status,
+      dateFrom: row.date_from,
+      dateTo: row.date_to,
+    }));
+  }
+
+  private formatWorkRecordConflictError(
+    conflicts: Array<{
+      workDate: string;
+      salaryStatus: string;
+      dateFrom: string | null;
+      dateTo: string | null;
+    }>,
+    action: 'tính' | 'thanh toán'
+  ): Error {
+    const uniqueSlips = new Map<string, { status: string; dateFrom: string | null; dateTo: string | null }>();
+    for (const c of conflicts) {
+      const key = `${c.dateFrom || '?'}|${c.dateTo || '?'}|${c.salaryStatus}`;
+      if (!uniqueSlips.has(key)) {
+        uniqueSlips.set(key, {
+          status: c.salaryStatus,
+          dateFrom: c.dateFrom,
+          dateTo: c.dateTo,
+        });
+      }
+    }
+
+    const slipDescriptions = Array.from(uniqueSlips.values())
+      .map((s) => {
+        const range =
+          s.dateFrom && s.dateTo
+            ? `${s.dateFrom} - ${s.dateTo}`
+            : 'không có khoảng ngày';
+        return `phiếu "${s.status}" (${range})`;
+      })
+      .join(', ');
+
+    const sampleDates = [...new Set(conflicts.map((c) => c.workDate))].slice(0, 5).join(', ');
+    const more =
+      conflicts.length > 5
+        ? ` và ${conflicts.length - Math.min(5, [...new Set(conflicts.map((c) => c.workDate))].length)} ngày khác`
+        : '';
+
+    const err = new Error(
+      `Không thể ${action} lương vì có ${conflicts.length} bản ghi công việc đã nằm trong phiếu lương khác: ${slipDescriptions}. Các ngày trùng ví dụ: ${sampleDates}${more}. Vui lòng xóa phiếu trùng trước khi tiếp tục.`
+    );
+    (err as any).code = 'WORK_RECORD_OVERLAP';
+    return err;
+  }
+
   async calculateAndSaveMonthlySalary(data: CalculateMonthlySalaryDto): Promise<MonthlySalaryResponse> {
     const { employeeId, dateFrom, dateTo } = data;
 
@@ -244,6 +337,12 @@ class MonthlySalaryModel {
       [recordIds]
     );
     const totalWorkDays = parseInt(uniqueDaysQuery.rows[0].unique_days) || 0;
+
+    // Block if any selected work records are already on another salary slip
+    const workRecordConflicts = await this.findWorkRecordConflicts(recordIds);
+    if (workRecordConflicts.length > 0) {
+      throw this.formatWorkRecordConflictError(workRecordConflicts, 'tính');
+    }
 
     // Check if there's already a "Tạm tính" salary for this employee and date range
     const existingTemporarySalaries = await this.getAllTemporarySalariesByEmployee(
@@ -475,18 +574,46 @@ class MonthlySalaryModel {
 
     // Combine all salaries to merge (temporary + paid)
     const allSalariesToMerge = [...temporarySalaries, ...paidSalaries];
+    const mergeSalaryIds = allSalariesToMerge.map((s) => s.id);
+
+    // Get work record IDs for slips in this pay/merge set
+    const payJunctionResult = await pool.query(
+      `SELECT DISTINCT work_record_id FROM monthly_salary_work_records
+       WHERE monthly_salary_id = ANY($1::uuid[])`,
+      [mergeSalaryIds]
+    );
+    const payWorkRecordIds = payJunctionResult.rows.map((row) => row.work_record_id);
+
+    // Block pay if any linked work records also belong to another slip outside this merge set
+    // (e.g. overlapping date ranges that share the same work records)
+    if (payWorkRecordIds.length > 0) {
+      const payConflicts = await this.findWorkRecordConflicts(payWorkRecordIds, mergeSalaryIds);
+      if (payConflicts.length > 0) {
+        throw this.formatWorkRecordConflictError(payConflicts, 'thanh toán');
+      }
+
+      // Also block if any work record is already marked paid but not part of a merged paid slip
+      const alreadyPaidResult = await pool.query(
+        `SELECT wr.id, wr.work_date::text as work_date
+         FROM work_records wr
+         WHERE wr.id = ANY($1::uuid[])
+           AND wr.status = 'Đã thanh toán'`,
+        [payWorkRecordIds]
+      );
+      if (alreadyPaidResult.rows.length > 0 && paidSalaries.length === 0) {
+        const dates = alreadyPaidResult.rows.map((r) => r.work_date).slice(0, 5).join(', ');
+        const err = new Error(
+          `Không thể thanh toán lương vì có ${alreadyPaidResult.rows.length} bản ghi công việc đã ở trạng thái "Đã thanh toán" (ví dụ ngày: ${dates}). Vui lòng kiểm tra và xóa phiếu trùng.`
+        );
+        (err as any).code = 'WORK_RECORD_OVERLAP';
+        throw err;
+      }
+    }
 
     // If only one temporary salary and no paid salaries, just pay it
     if (temporarySalaries.length === 1 && paidSalaries.length === 0) {
       const singleSalary = temporarySalaries[0];
-      
-      // Get all work record IDs from junction table
-      const junctionResult = await pool.query(
-        `SELECT work_record_id FROM monthly_salary_work_records
-         WHERE monthly_salary_id = $1`,
-        [singleSalary.id]
-      );
-      const workRecordIds = junctionResult.rows.map(row => row.work_record_id);
+      const workRecordIds = payWorkRecordIds;
 
       // Update work records status
       if (workRecordIds.length > 0) {

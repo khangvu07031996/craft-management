@@ -110,11 +110,15 @@ export const calculateMonthlySalary = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error calculating monthly salary:', error);
-    // If error message contains specific error about no salary data, return 400 instead of 500
     const errorMessage = error.message || 'Failed to calculate monthly salary';
-    const statusCode = errorMessage.includes('Không có dữ liệu lương') || 
-                       errorMessage.includes('Không tìm thấy nhân viên') || 
-                       errorMessage.includes('không có bản ghi công việc') ? 400 : 500;
+    const isClientError =
+      error.code === 'WORK_RECORD_OVERLAP' ||
+      errorMessage.includes('Không có dữ liệu lương') ||
+      errorMessage.includes('Không tìm thấy nhân viên') ||
+      errorMessage.includes('không có bản ghi công việc') ||
+      errorMessage.includes('đã có bảng lương tạm tính') ||
+      errorMessage.includes('đã nằm trong phiếu lương khác');
+    const statusCode = error.code === 'WORK_RECORD_OVERLAP' ? 409 : isClientError ? 400 : 500;
     return res.status(statusCode).json({
       success: false,
       message: errorMessage,
@@ -177,10 +181,18 @@ export const payMonthlySalary = async (req: Request, res: Response) => {
     return res.json({ success: true, data: paid, message: 'Đã thanh toán bảng lương' });
   } catch (error: any) {
     console.error('Error paying monthly salary:', error);
-    return res.status(500).json({
+    const errorMessage = error.message || 'Failed to pay monthly salary';
+    const isClientError =
+      error.code === 'WORK_RECORD_OVERLAP' ||
+      errorMessage.includes('đã được thanh toán') ||
+      errorMessage.includes('Chỉ có thể thanh toán') ||
+      errorMessage.includes('đã nằm trong phiếu lương khác') ||
+      errorMessage.includes('Đã thanh toán');
+    const statusCode = error.code === 'WORK_RECORD_OVERLAP' ? 409 : isClientError ? 400 : 500;
+    return res.status(statusCode).json({
       success: false,
-      message: 'Failed to pay monthly salary',
-      error: error.message,
+      message: errorMessage,
+      error: errorMessage,
     });
   }
 };
